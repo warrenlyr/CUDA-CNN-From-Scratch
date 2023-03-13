@@ -1,5 +1,9 @@
-// CPP CNN.cpp : This file contains the 'main' function. Program execution begins and ends there.
-//
+/*
+* Convolutional layer CPU implementation
+* Author: Warren Liu
+* Date: 3/12/2023
+* For: CSS 535: High Performance Computing, Final Project
+*/
 
 #include <iostream>
 #include <Windows.h>
@@ -98,9 +102,11 @@ int main()
 
 	// Convolution
 	auto start = high_resolution_clock::now();
-	//#pragma omp parallel for
+	//#pragma omp parallel for // OpenMP can run this loop 10X faster
 	for (int i = 0; i < cat_images.size(); i++) {
 		
+		// The function that takes static filters as parameters
+		// This one runs much faster than the one that takes a vector of filters as a parameter
 		vector<Mat> new_images = conv2D_static(cat_images[i].string(),
 												filter_vertical_line,
 												filter_horiz_line,
@@ -110,16 +116,17 @@ int main()
 												filter_round_line
 												);
 		
-		// Returned convoloed images
+		// The function that takes a vector of filters as a parameter (dynamic)
+		// Much slower than another one, maybe too much overhead of loops
 		//vector<Mat> new_images = conv2D(cat_images[i].string(), filters);
 
-		// Test: write convolved images to output folder
-		int index = 0;
+		// TEST USE: write convolved images to output folder
+		/*int index = 0;
 		for (auto image : new_images) {
 			bool success = imwrite(string(CATS_PATH_OUTPUT) + "filter_" + to_string(index++) + "_" + cat_images[i].filename().string(), image);
 			cout << "Success: " << success << endl;
 		}
-		break;
+		break;*/
 	}
 	auto end = high_resolution_clock::now();
 	auto duration = duration_cast<microseconds>(end - start);
