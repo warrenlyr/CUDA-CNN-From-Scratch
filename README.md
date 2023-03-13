@@ -20,15 +20,15 @@ Keywords: Matrix Multiplication, CUDA, Threads, Blocks, Grids, Memory, Cache, La
 
 ## Prerequisites
 
-- `OpenCV v4.7.0+`
-
-  - Add the `OpenCV` lib to `Visual Studio 2022` project properties following this 
-
-    [tutorial]: https://www.geeksforgeeks.org/opencv-c-windows-setup-using-visual-studio-2019/	"OpenCV C++ Windows Setup using Visual Studio 2019"
-
 - `Visual Studio 2022+`
 
   - C++ Language Standard: ISO C++ 17 Standard (17 and above)
+
+
+- `OpenCV v4.7.0+`
+
+  - Set up `OpenCV` and add to `Visual Studio 2022` project properties following this [link](https://www.geeksforgeeks.org/opencv-c-windows-setup-using-visual-studio-2019/)
+
 
 - `CUDA Toolkit 12.0+`
 
