@@ -9,6 +9,9 @@
 #include <sys/stat.h>
 #include <vector>
 #include <chrono>
+#include<cstdio>
+
+#include <omp.h>
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/highgui.hpp>
@@ -16,21 +19,22 @@
 using namespace std;
 using namespace cv;
 using namespace chrono;
-using namespace filesystem;
 
 
 #define BASE_PATH ".\\data\\"
 #define CATS_PATH ".\\data\\cats\\"
+#define CATS_PATH_OUTPUT ".\\data\\cats_output\\"
 #define DOGS_PATH ".\\data\\dogs\\"
-
-#define NUM_FILTERS 5
+#define DOGS_PATH_OUTPUT ".\\data\\dogs_output\\"
+#define NUM_FILTERS 6
+#define FILTER_SIZE 3
 
 
 void getCurrDir();
-vector<string> getFiles(const string& path);
+vector<filesystem::path> getFiles(const string& path);
 vector<vector<vector<int>>> createFilters();
 
-void conv2D(const string&,
+vector<Mat> conv2D_static(const string&, // This function takes static filters as parameters
 	const vector<vector<int>>,
 	const vector<vector<int>>,
 	const vector<vector<int>>,
@@ -38,14 +42,20 @@ void conv2D(const string&,
 	const vector<vector<int>>,
 	const vector<vector<int>>);
 
+vector<Mat> conv2D( // The function takes a vector of filters as a parameter
+	const string&,
+	const vector<vector<vector<int>>>&
+);
+
 
 int main()
 {
 	// Get all images
-	vector<string> cat_images = getFiles(CATS_PATH);
-	vector<string> dog_images = getFiles(DOGS_PATH);
+	vector<filesystem::path> cat_images = getFiles(CATS_PATH);
+	vector<filesystem::path> dog_images = getFiles(DOGS_PATH);
 
-	// Create filters
+	// Create filters (test use, for conv2D_static)
+	
 	vector<vector<int>> filter_vertical_line{
 		{0, 1, 0},
 		{0, 1, 0},
@@ -81,17 +91,34 @@ int main()
 		{1, 0, 1},
 		{0, 1, 0},
 	};
+	
+
+	// Create filters (actual use, for conv2D)
+	vector<vector<vector<int>>> filters = createFilters();
 
 	// Convolution
 	auto start = high_resolution_clock::now();
+	//#pragma omp parallel for
 	for (int i = 0; i < cat_images.size(); i++) {
-		conv2D(cat_images[i],
-			filter_vertical_line,
-			filter_horiz_line,
-			filter_diagonal_lbru_line,
-			filter_diagonal_lurb_line,
-			filter_diagonal_x_line,
-			filter_round_line);
+		
+		vector<Mat> new_images = conv2D_static(cat_images[i].string(),
+												filter_vertical_line,
+												filter_horiz_line,
+												filter_diagonal_lbru_line,
+												filter_diagonal_lurb_line,
+												filter_diagonal_x_line,
+												filter_round_line
+												);
+		
+		// Returned convoloed images
+		//vector<Mat> new_images = conv2D(cat_images[i].string(), filters);
+
+		// Test: write convolved images to output folder
+		int index = 0;
+		for (auto image : new_images) {
+			bool success = imwrite(string(CATS_PATH_OUTPUT) + "filter_" + to_string(index++) + "_" + cat_images[i].filename().string(), image);
+			cout << "Success: " << success << endl;
+		}
 		break;
 	}
 	auto end = high_resolution_clock::now();
@@ -114,10 +141,10 @@ void getCurrDir() {
 }
 
 
-vector<string> getFiles(const string& path) {
-	vector<string> files;
+vector<filesystem::path> getFiles(const string& path) {
+	vector<filesystem::path> files;
 	for (const auto& entry : filesystem::directory_iterator(path)) {
-		files.push_back(entry.path().string());
+		files.push_back(entry.path());
 	}
 
 	return files;
@@ -174,7 +201,7 @@ vector<vector<vector<int>>> createFilters() {
 }
 
 
-void conv2D(
+vector<Mat> conv2D_static(
 	const string& image_path,
 	const vector<vector<int>> filter_vertical_line,
 	const vector<vector<int>> filter_horizontal_line,
@@ -193,8 +220,8 @@ void conv2D(
 		/*cout << "Image width: " << image_width << endl;
 		cout << "Image height: " << image_height << endl;*/
 
-		int new_image_width = image_width - 3;
-		int new_image_height = image_height - 3;
+		int new_image_width = image_width - FILTER_SIZE;
+		int new_image_height = image_height - FILTER_SIZE;
 
 		Mat new_image_extract_vertical = Mat::zeros(new_image_height, new_image_width, CV_8UC1);
 		Mat new_image_extract_horiz = Mat::zeros(new_image_height, new_image_width, CV_8UC1);
@@ -212,20 +239,17 @@ void conv2D(
 				int diagonal_x_sum = 0;
 				int round_sum = 0;
 
-				for (int filter_i = i; filter_i < i + 3; filter_i++) {
-					for (int filter_j = j; filter_j < j + 3; filter_j++) {
+				for (int filter_i = i; filter_i < i + FILTER_SIZE; filter_i++) {
+					for (int filter_j = j; filter_j < j + FILTER_SIZE; filter_j++) {
 						int image_value = image.at<uchar>(filter_i, filter_j);
 
 						int filter_value = filter_vertical_line[filter_i - i][filter_j - j];
-						//int filter_value = *(filter_vertical_line + filter_i * 3 + filter_j);
 						vertical_sum += image_value * filter_value;
 
 						filter_value = filter_horizontal_line[filter_i - i][filter_j - j];
-						//filter_value = *(filter_horizontal_line + filter_i * 3 + filter_j);
 						horiz_sum += image_value * filter_value;
 
 						filter_value = filter_diagonal_lbru_line[filter_i - i][filter_j - j];
-						//filter_value = *(filter_diagonal_line + filter_i * 3 + filter_j);
 						diagonal_lbru_sum += image_value * filter_value;
 
 						filter_value = filter_diagonal_lurb_line[filter_i - i][filter_j - j];
@@ -235,11 +259,10 @@ void conv2D(
 						diagonal_x_sum += image_value * filter_value;
 
 						filter_value = filter_round_line[filter_i - i][filter_j - j];
-						//filter_value = *(filter_round_line + filter_i * 3 + filter_j);
 						round_sum += image_value * filter_value;
 					}
 				}
-				//new_image.at<uchar>(i, j) = 200;
+				
 				new_image_extract_vertical.at<uchar>(i, j) = vertical_sum;
 				new_image_extract_horiz.at<uchar>(i, j) = horiz_sum;
 				new_image_extract_diagonal_lbru.at<uchar>(i, j) = diagonal_lbru_sum;
@@ -249,8 +272,18 @@ void conv2D(
 			}
 		}
 
-		// Output for test
+		vector<Mat> new_images{
+			new_image_extract_vertical,
+			new_image_extract_horiz,
+			new_image_extract_diagonal_lbru,
+			new_image_extract_diagonal_lurb,
+			new_image_extract_diagonal_x,
+			new_image_extract_round
+		};
+		return new_images;
 
+		// Output for test
+		/*
 		cout << "Original Image Size: " << image.size() << endl;
 		cout << "New Image (Vertical) Size: " << new_image_extract_vertical.size() << endl;
 		cout << "New Image (Horizontal) Size: " << new_image_extract_horiz.size() << endl;
@@ -284,6 +317,66 @@ void conv2D(
 		imshow("Round Line", new_image_extract_round);
 
 		waitKey(0); // Wait for any keystroke in the window
-
+		*/
 	}
+
+	vector<Mat> new_images;
+	return new_images;
+}
+
+
+vector<Mat> conv2D(const string& image_path, const vector<vector<vector<int>>> &filters) {
+	Mat image = imread(image_path, IMREAD_GRAYSCALE);
+
+	if (!image.empty()) {
+		// Original image size
+		int image_width = image.cols;
+		int image_height = image.rows;
+
+		// New image size
+		int new_image_width = image_width - FILTER_SIZE;
+		int new_image_height = image_height - FILTER_SIZE;
+
+		// Init the vector to store the new images
+		vector<Mat> new_images;
+		for (int i = 0; i < NUM_FILTERS; i++) {
+			new_images.push_back(Mat::zeros(new_image_height, new_image_width, CV_8UC1));
+		}
+
+		// Loop for each pixel of new image
+		for (int i = 0; i < new_image_height; i++) {
+			for (int j = 0; j < new_image_width; j++) {
+				// Init vector to store the value of this pixel of each filter
+				vector<int> pixel_sum;
+				for (int pixel = 0; pixel < NUM_FILTERS; pixel++) {
+					pixel_sum.push_back(0);
+				}
+
+				for (int filter_i = i; filter_i < i + FILTER_SIZE; filter_i++) {
+					for (int filter_j = j; filter_j < j + FILTER_SIZE; filter_j++) {
+						// The value of the pixel of original image
+						int image_value = image.at<uchar>(filter_i, filter_j);
+
+						// Loop each filter
+						for (int filter = 0; filter < filters.size(); filter++) {
+							int filter_value = filters[filter][filter_i - i][filter_j - j];
+							int filter_sum = image_value * filter_value;
+
+							pixel_sum[filter] += filter_sum;
+						}
+					}
+				}
+
+				// Save the calculated new pixel to new images
+				for (int image = 0; image < new_images.size(); image++) {
+					new_images[image].at<uchar>(i, j) = pixel_sum[image];
+				}
+			}
+		}
+
+		return new_images;
+	}
+
+	vector<Mat> new_images;
+	return new_images;
 }
