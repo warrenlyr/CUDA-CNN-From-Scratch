@@ -7,6 +7,7 @@
 
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
+#include <opencv2/core/cuda.hpp>
 
 using namespace chrono;
 
@@ -25,16 +26,18 @@ void cnn_conv_pool_cpu(vector<Mat> images);
 int main()
 {
     // Load Images
-    vector<filesystem::path> cats_files = getFileNames(CATS_PATH);
+    /*vector<filesystem::path> cats_files = getFileNames(CATS_PATH);
     vector<Mat> cats_images;
     bool load_image_status = loadImages(cats_files, cats_images);
     if (!load_image_status) {
         fprintf(stderr, "Could not load images. Program aborted.\n");
         exit(EXIT_FAILURE);
-    }
+    }*/
 
     // [CPU] Convolutional and Pooling Layer
-    cnn_conv_pool_cpu(cats_images);
+    //cnn_conv_pool_cpu(cats_images);
+
+    cuda::printCudaDeviceInfo(0);
 
     return 0;
 }

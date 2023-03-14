@@ -34,7 +34,7 @@ vector<filesystem::path> getFileNames(const string& path) {
 	int count = 0;
 	// If the path exist, get all the files in the path
 	for (const auto& entry : filesystem::directory_iterator(path)) {
-		if (count == 5000) break;
+		if (count == 10000) break;
 		files.push_back(entry.path());
 		++count;
 	}
