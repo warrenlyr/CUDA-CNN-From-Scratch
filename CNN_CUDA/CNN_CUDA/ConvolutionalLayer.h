@@ -10,6 +10,9 @@
 using namespace std;
 using namespace cv;
 
+#define NUM_FILTERS 6
+#define FILTER_SIZE 3
+
 
 /*
 * Convolutional Layer 2D.
@@ -170,5 +173,71 @@ vector<Mat> conv2D_static(
 	waitKey(0); // Wait for any keystroke in the window
 	*/
 
+	return new_images;
+}
+
+
+/*
+* [DEPRECATED]
+* Convolutional Layer 2D.
+* Dynamic version, which takes dynamic created filters.
+* But this one much is slower than the static version.
+*
+* @param image: the image to be processed
+* @param filters: the filters to be used
+*/
+vector<Mat> conv2D(const string& image_path, const vector<vector<vector<int>>>& filters) {
+	Mat image = imread(image_path, IMREAD_GRAYSCALE);
+
+	if (!image.empty()) {
+		// Original image size
+		int image_width = image.cols;
+		int image_height = image.rows;
+
+		// New image size
+		int new_image_width = image_width - FILTER_SIZE;
+		int new_image_height = image_height - FILTER_SIZE;
+
+		// Init the vector to store the new images
+		vector<Mat> new_images;
+		for (int i = 0; i < NUM_FILTERS; i++) {
+			new_images.push_back(Mat::zeros(new_image_height, new_image_width, CV_8UC1));
+		}
+
+		// Loop for each pixel of new image
+		for (int i = 0; i < new_image_height; i++) {
+			for (int j = 0; j < new_image_width; j++) {
+				// Init vector to store the value of this pixel of each filter
+				vector<int> pixel_sum;
+				for (int pixel = 0; pixel < NUM_FILTERS; pixel++) {
+					pixel_sum.push_back(0);
+				}
+
+				for (int filter_i = i; filter_i < i + FILTER_SIZE; filter_i++) {
+					for (int filter_j = j; filter_j < j + FILTER_SIZE; filter_j++) {
+						// The value of the pixel of original image
+						int image_value = image.at<uchar>(filter_i, filter_j);
+
+						// Loop each filter
+						for (int filter = 0; filter < filters.size(); filter++) {
+							int filter_value = filters[filter][filter_i - i][filter_j - j];
+							int filter_sum = image_value * filter_value;
+
+							pixel_sum[filter] += filter_sum;
+						}
+					}
+				}
+
+				// Save the calculated new pixel to new images
+				for (int image = 0; image < new_images.size(); image++) {
+					new_images[image].at<uchar>(i, j) = pixel_sum[image];
+				}
+			}
+		}
+
+		return new_images;
+	}
+
+	vector<Mat> new_images;
 	return new_images;
 }
