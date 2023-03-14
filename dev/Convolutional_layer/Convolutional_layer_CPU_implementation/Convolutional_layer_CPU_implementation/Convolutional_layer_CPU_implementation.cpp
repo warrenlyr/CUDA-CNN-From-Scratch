@@ -102,7 +102,7 @@ int main()
 
 	// Convolution
 	auto start = high_resolution_clock::now();
-	//#pragma omp parallel for // OpenMP can run this loop 10X faster
+	#pragma omp parallel for // OpenMP can run this loop 10X faster
 	for (int i = 0; i < cat_images.size(); i++) {
 		
 		// The function that takes static filters as parameters
@@ -121,12 +121,12 @@ int main()
 		//vector<Mat> new_images = conv2D(cat_images[i].string(), filters);
 
 		// TEST USE: write convolved images to output folder
-		/*int index = 0;
+		int index = 0;
 		for (auto image : new_images) {
 			bool success = imwrite(string(CATS_PATH_OUTPUT) + "filter_" + to_string(index++) + "_" + cat_images[i].filename().string(), image);
 			cout << "Success: " << success << endl;
 		}
-		break;*/
+		//break;
 	}
 	auto end = high_resolution_clock::now();
 	auto duration = duration_cast<microseconds>(end - start);
