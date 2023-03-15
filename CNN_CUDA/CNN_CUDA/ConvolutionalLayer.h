@@ -1,4 +1,5 @@
 #include "Filters.h"
+#include "KernelFunctions.cu"
 
 #include <string>
 #include <vector>
@@ -6,6 +7,9 @@
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/highgui.hpp>
+
+#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
 
 using namespace std;
 using namespace cv;
@@ -241,3 +245,6 @@ vector<Mat> conv2D(const string& image_path, const vector<vector<vector<int>>>& 
 	vector<Mat> new_images;
 	return new_images;
 }
+
+
+

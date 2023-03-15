@@ -1,13 +1,25 @@
-﻿#include "Filters.h"
+﻿/*-----------------------------------------------
+* Author: Warren Liu, Chris Ma
+* Final Project: CUDA CNN Implementation
+* CSS535 - High Performance Computing
+* School of STEM, Department of Computer Science & Software Engineering
+* Winter 2023, University of Washington Bothell
+* -----------------------------------------------
+* Compile Prerequisites
+* 1. Visual Studio 17 2022
+* 2. CUDA Toolkit 12.0
+* 3. CMake
+* 4. OpenCV 4.7.0 with CUDA support (need to be compiled from source)
+*/
+#include "Filters.h"
 #include "Helpers.h"
 #include "ConvolutionalLayer.h"
 #include "PoolingLayer.h"
 
 #include <chrono>
 
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
-#include <opencv2/core/cuda.hpp>
+
+
 
 using namespace chrono;
 
@@ -25,20 +37,79 @@ void cnn_conv_pool_cpu(vector<Mat> images);
 
 int main()
 {
+    
     // Load Images
-    /*vector<filesystem::path> cats_files = getFileNames(CATS_PATH);
+    vector<filesystem::path> cats_files = getFileNames(CATS_PATH);
+
     vector<Mat> cats_images;
     bool load_image_status = loadImages(cats_files, cats_images);
     if (!load_image_status) {
         fprintf(stderr, "Could not load images. Program aborted.\n");
         exit(EXIT_FAILURE);
-    }*/
+    }
+
 
     // [CPU] Convolutional and Pooling Layer
     //cnn_conv_pool_cpu(cats_images);
+    
 
-    cuda::printCudaDeviceInfo(0);
+    /*int width = 1;
+    int height = 1;
+    int depth = 1;
 
+    cudaExtent extent = make_cudaExtent(width * sizeof(int), height, depth);
+    cudaPitchedPtr ptr;
+    cudaMalloc3D(&ptr, extent);
+    cudaFree(ptr.ptr);*/
+
+    
+    //cuda::printCudaDeviceInfo(0);
+
+
+    // Convert Mat to int array
+    const int col = cats_images[0].cols;
+    const int row = cats_images[0].rows;
+    const int count = cats_images.size();
+
+    int*** intImages = new int** [count];
+    int*** intImages_output = new int** [count];
+    for (int k = 0; k < count; k++) {
+        intImages[k] = new int* [row];
+        intImages_output[k] = new int* [row];
+        for (int i = 0; i < row; i++) {
+			intImages[k][i] = new int[col];
+			intImages_output[k][i] = new int[col];
+            for (int j = 0; j < col; j++) {
+                intImages[k][i][j] = 0;
+                intImages_output[k][i][j] = 0;
+            }
+		}
+    }
+
+    if (!convertMatToIntArr(cats_images, intImages, count, row, col)) {
+        fprintf(stderr, "Could not convert Mat to int array. Program aborted.\n");
+		exit(EXIT_FAILURE);
+    }
+
+    int* intImages1D = flatten3Dto1D(intImages, count, row, col);
+    int* intImages_output1D = flatten3Dto1D(intImages_output, count, row, col);
+
+    startCudaCov2D(intImages1D, intImages_output1D, count, row, col);
+
+    //for (int k = 0; k < 5; k++) {
+    //    Mat image = Mat(row, col, CV_8UC1);
+
+    //    for (int a = 0; a < row; a++) {
+    //        for (int b = 0; b < col; b++) {
+    //            image.at<uchar>(a, b) = intImages[k][a][b];
+    //        }
+    //    }
+
+    //    // Print the image
+    //    imshow("Image", image);
+    //    waitKey(0);
+    //}
+    
     return 0;
 }
 
@@ -78,3 +149,15 @@ void cnn_conv_pool_cpu(vector<Mat> images) {
     printf("Pooling Layer took %d milliseconds to run.\n", duration_pool);
 }
 
+
+/*
+* Catch CUDA errors and print the error message.
+* 
+* @param err: The CUDA function return value.
+*/
+void checkCudaError(cudaError_t err) {
+    if (err != cudaSuccess) {
+		fprintf(stderr, "CUDA Error: %s\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+}
