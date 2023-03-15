@@ -1,5 +1,5 @@
+#pragma once
 #include "Filters.h"
-#include "KernelFunctions.cu"
 
 #include <string>
 #include <vector>
@@ -247,4 +247,47 @@ vector<Mat> conv2D(const string& image_path, const vector<vector<vector<int>>>& 
 }
 
 
+__global__ void conv2D_cuda(
+	cudaPitchedPtr devPtr, cudaPitchedPtr devPtr_output,
+	int count, int row, int col, int row_output, int col_output
+)
+{
+	int x = blockIdx.x * blockDim.x + threadIdx.x;
+	int y = blockIdx.y * blockDim.y + threadIdx.y;
+	int z = blockIdx.z * blockDim.z + threadIdx.z;
+
+	for (int i = 0; i < 10; i++) {
+		char* devPtrSlice = (char*)devPtr.ptr + z * devPtr.pitch * count;
+		int* rowData = (int*)(devPtrSlice + y * devPtr.pitch);
+		int data = rowData[i];
+		printf("%d ", data);
+	}
+	
+}
+
+
+__global__ void cov2d_cuda1D(
+	int* input, int* output, int* filter,
+	int count, int row, int col, int row_output, int col_output
+)
+{
+	int global_index = blockIdx.x * blockDim.x + threadIdx.x;
+	int global_count = global_index / (row * col);
+	int global_before = global_index - global_count * row * col;
+	int global_row = (global_index - global_before) / col;
+	int global_col = (global_index - global_before) % col;
+
+	if (global_row < row_output && global_col < col_output) {
+		int sum = 0;
+		for (int i = 0; i < FILTER_SIZE; i++) {
+			for (int j = 0; j < FILTER_SIZE; j++) {
+				int index = (global_row + i) * col + (global_col + j);
+				int value = input[index];
+				int filter_value = filter[i * FILTER_SIZE + j];
+				sum += value * filter_value;
+			}
+		}
+		output[global_index] = sum;
+	}
+}
 

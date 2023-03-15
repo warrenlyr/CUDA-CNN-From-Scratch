@@ -38,6 +38,9 @@ void cnn_conv_pool_cpu(vector<Mat> images);
 int main()
 {
     
+    //cuda::printCudaDeviceInfo(0);
+
+
     // Load Images
     vector<filesystem::path> cats_files = getFileNames(CATS_PATH);
 
@@ -48,27 +51,21 @@ int main()
         exit(EXIT_FAILURE);
     }
 
+    for (int i = 0; i < 10; i++) {
+        cout << int(cats_images[0].at<uchar>(0, i)) << " ";
+    }
+    cout << endl;
+
 
     // [CPU] Convolutional and Pooling Layer
     //cnn_conv_pool_cpu(cats_images);
-    
-
-    /*int width = 1;
-    int height = 1;
-    int depth = 1;
-
-    cudaExtent extent = make_cudaExtent(width * sizeof(int), height, depth);
-    cudaPitchedPtr ptr;
-    cudaMalloc3D(&ptr, extent);
-    cudaFree(ptr.ptr);*/
-
-    
-    //cuda::printCudaDeviceInfo(0);
 
 
     // Convert Mat to int array
     const int col = cats_images[0].cols;
+    const int col_output = col - 3;
     const int row = cats_images[0].rows;
+    const int row_output = row - 3;
     const int count = cats_images.size();
 
     int*** intImages = new int** [count];
@@ -78,37 +75,37 @@ int main()
         intImages_output[k] = new int* [row];
         for (int i = 0; i < row; i++) {
 			intImages[k][i] = new int[col];
-			intImages_output[k][i] = new int[col];
             for (int j = 0; j < col; j++) {
                 intImages[k][i][j] = 0;
-                intImages_output[k][i][j] = 0;
             }
 		}
+        
+        for (int i = 0; i < row_output; i++) {
+			intImages_output[k][i] = new int[col_output];
+            for (int j = 0; j < col_output; j++) {
+				intImages_output[k][i][j] = 0;
+			}
+        }
     }
 
-    if (!convertMatToIntArr(cats_images, intImages, count, row, col)) {
+    if (!convertMatToIntArr3D(cats_images, intImages, count, row, col)) {
         fprintf(stderr, "Could not convert Mat to int array. Program aborted.\n");
 		exit(EXIT_FAILURE);
     }
 
     int* intImages1D = flatten3Dto1D(intImages, count, row, col);
-    int* intImages_output1D = flatten3Dto1D(intImages_output, count, row, col);
+    int* intImages_output1D = flatten3Dto1D(intImages_output, count, row_output, col_output);
+    startCudaCov2Dwith3Darr(intImages1D, intImages_output1D, count, row, col, row_output, col_output);
 
-    startCudaCov2D(intImages1D, intImages_output1D, count, row, col);
+    /*int* intImages1D = new int[count * row * col];
+    int* intImages_output1D = new int[count * row * col];
+    if (convertMatToIntArr1D(cats_images, intImages1D, count, row, col)) {
+		fprintf(stderr, "Could not convert Mat to int array. Program aborted.\n");
+		exit(EXIT_FAILURE);
+	}*/
 
-    //for (int k = 0; k < 5; k++) {
-    //    Mat image = Mat(row, col, CV_8UC1);
 
-    //    for (int a = 0; a < row; a++) {
-    //        for (int b = 0; b < col; b++) {
-    //            image.at<uchar>(a, b) = intImages[k][a][b];
-    //        }
-    //    }
-
-    //    // Print the image
-    //    imshow("Image", image);
-    //    waitKey(0);
-    //}
+    
     
     return 0;
 }
@@ -161,3 +158,5 @@ void checkCudaError(cudaError_t err) {
 		exit(EXIT_FAILURE);
 	}
 }
+
+
