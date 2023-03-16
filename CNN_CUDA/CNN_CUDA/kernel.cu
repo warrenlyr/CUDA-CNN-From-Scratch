@@ -106,6 +106,35 @@ int main()
     int* intImages_output1D = flatten3Dto1D(intImages_output, count, row_output, col_output);
     startCudaCov2Dwith3Darr(intImages1D, intImages_output1D, count, row, col, row_output, col_output);
 
+    /*for (int i = 0; i < count * row_output * col_output; i++) {
+        cout << intImages_output1D[i] << " ";
+    }
+    cout << endl;*/
+
+    intImages_output = build3Dfrom1D(intImages_output1D, count, row_output, col_output);
+    /*for (int k = 0; k < count; k++) {
+        for (int i = 0; i < row_output; i++) {
+            for (int j = 0; j < col_output; j++) {
+                cout << intImages_output[k][i][j] << " ";
+            }
+            cout << endl;
+        }
+        cout << endl;
+    }*/
+
+    vector<Mat> images_output;
+    convertIntArr3DToMat(intImages_output, images_output, count, row_output, col_output);
+
+    // Print the image
+    int cnt = 0;
+    for (auto image : images_output) {
+        if (cnt++ == 9) break;
+        namedWindow("Image", WINDOW_NORMAL);
+        resizeWindow("Image", 600, 600);
+        imshow("Image", image);
+        waitKey(0);
+    }
+
     /*int* intImages1D = new int[count * row * col];
     int* intImages_output1D = new int[count * row * col];
     if (convertMatToIntArr1D(cats_images, intImages1D, count, row, col)) {
@@ -113,7 +142,23 @@ int main()
 		exit(EXIT_FAILURE);
 	}*/
 
+    // Cleanup
+    for (int k = 0; k < count; k++) {
+        for (int i = 0; i < row; i++) {
+            delete[] intImages[k][i];
+        }
+        delete[] intImages[k];
 
+        for (int i = 0; i < row_output; i++) {
+            delete[] intImages_output[k][i];
+        }
+        delete intImages_output[k];
+    }
+    delete[] intImages;
+    delete[] intImages_output;
+
+    delete[] intImages1D;
+    delete[] intImages_output1D;
     
     
     return 0;

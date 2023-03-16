@@ -42,7 +42,7 @@ vector<filesystem::path> getFileNames(const string& path) {
 	int count = 0;
 	// If the path exist, get all the files in the path
 	for (const auto& entry : filesystem::directory_iterator(path)) {
-		if (count == 1) break;
+		if (count == 10) break;
 		files.push_back(entry.path());
 		++count;
 	}
@@ -136,6 +136,26 @@ bool convertMatToIntArr3D(const vector<Mat> images, int*** intImages3D, const in
 
 
 /*
+* Convert 3D int array to OpenCV Mat.
+*/
+bool convertIntArr3DToMat(int*** intImages3D, vector<Mat>& images, const int count, const int row, const int col) {
+	int cnt = 0;
+	for (int k = 0; k < count; ++k) {
+		Mat image(row, col, CV_8UC1);
+		for (int i = 0; i < row; i++) {
+			for (int j = 0; j < col; j++) {
+				image.at<uchar>(i, j) = intImages3D[cnt][i][j];
+			}
+		}
+		images.push_back(image);
+		++cnt;
+	}
+
+	return true;
+}
+
+
+/*
 * Convert OpenCV Mat to 1D int array.
 *
 */
@@ -192,22 +212,34 @@ int*** build3Dfrom1D(int* arr1D, int x, int y, int z) {
 		}
 	}
 
+	/*for (int i = 0; i < x; i++) {
+		for (int j = 0; j < y; j++) {
+			for (int k = 0; k < z; k++) {
+				cout << arr3D[i][j][k] << " ";
+			}
+			cout << endl;
+		}
+		cout << endl;
+	}
+	cout << endl;*/
+
 	return arr3D;
 }
 
 
 
 /*
-* Helper function for using CUDA Convolutional Layer.
+* Helper function for using CUDA Convolutional Layer with 3D array input.
 */
 cudaError_t startCudaCov2Dwith3Darr(
-	const int* images, const int* images_output, 
+	const int* images, int* images_output, 
 	const int count, const int row, const int col, const int row_output, const int col_output) 
 {
 
 	cudaError_t cudaStatus;
 	cudaPitchedPtr dev_ptr;
 	cudaPitchedPtr dev_ptr_output;
+	int* dev_filter;
 
 	// Choose which GPU to run on, change this on a multi-GPU system.
 	cudaStatus = cudaSetDevice(0);
@@ -268,14 +300,35 @@ cudaError_t startCudaCov2Dwith3Darr(
 	else {
 		cout << "cudaMemcpy3D success!" << endl; {}
 	}
-	
 
-	// 
+	// Copy filter to device memory
 	int filter[9] = { 0, 1, 0, 0, 1, 0, 0, 1, 0 };
-	dim3 gridDim(1, 1, 1);
-	dim3 blockDim(1, 1, 1);
+	cudaStatus = cudaMalloc((void**)&dev_filter, 9 * sizeof(int));
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMalloc failed!");
+		goto Error;
+	}
+	cudaStatus = cudaMemcpy(dev_filter, filter, 9 * sizeof(int), cudaMemcpyHostToDevice);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMemcpy failed!");
+		goto Error;
+	}
+	
+	// Calculate config
+	int grid_y = ceil(float(count) / 1024);
+	cout << "grid_y: " << grid_y << endl;
+	int block_y;
+	if (count < 1024)
+		block_y = count;
+	else
+		block_y = 1024;
+	cout << "block_y: " << block_y << endl;
+
+	// Launch kernel function
+	dim3 gridDim(1, grid_y, 1);
+	dim3 blockDim(1, block_y, 1);
 	auto start_conv = high_resolution_clock::now();
-	conv2D_cuda3D <<<gridDim, blockDim>>> (dev_ptr, dev_ptr_output, filter, count, row, col, row_output, col_output);
+	conv2D_cuda3D <<<gridDim, blockDim>>> (dev_ptr, dev_ptr_output, dev_filter, count, row, col, row_output, col_output);
 
 	cudaStatus = cudaGetLastError();
 	if (cudaStatus != cudaSuccess) {
@@ -313,6 +366,7 @@ cudaError_t startCudaCov2Dwith3Darr(
 Error:
 	cudaFree(dev_ptr.ptr);
 	cudaFree(dev_ptr_output.ptr);
+	cudaFree(dev_filter);
 
 	return cudaStatus;
 }
@@ -320,7 +374,10 @@ Error:
 
 
 
-
+/*
+* [DEPRECATED]
+* Helper function for using CUDA Convolutional Layer with 1D array input.
+*/
 cudaError_t startCudaCov2Dwith1Darr(const int* images, const int* images_output, int count, int row, int col) {
 	int size = count * row * col;
 	cudaError_t cudaStatus;
