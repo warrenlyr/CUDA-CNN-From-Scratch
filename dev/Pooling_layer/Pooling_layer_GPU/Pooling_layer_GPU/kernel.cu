@@ -30,6 +30,7 @@ using namespace chrono;
 #define BASE_PATH ".\\data\\"
 #define CATS_PATH ".\\data\\cats\\"
 #define CATS_PATH_OUTPUT ".\\data\\cats_output\\"
+#define CATS_PATH_BIG ".\\data\\cats_convolved\\cats_output\\"
 #define CATS_PATH_FINAL ".\\data\\cats_final\\"
 #define DOGS_PATH ".\\data\\dogs\\"
 #define DOGS_PATH_OUTPUT ".\\data\\dogs_output\\"
@@ -47,32 +48,60 @@ bool convertMatToIntArr(const vector<Mat> images, int*** intImages, const int co
 
 bool loadImages(const vector<filesystem::path>& files, vector<Mat>& images);
 
-__global__ void poolingKernel(cudaPitchedPtr image, cudaPitchedPtr new_image, int image_cnt, int row, int col)
+bool convertIntArr3DToMat(int*** intImages3D, vector<Mat>& images, const int count, const int row, const int col);
+
+int*** build3Dfrom1D(int* arr1D, int x, int y, int z);
+
+__global__ void poolingKernel(cudaPitchedPtr image, cudaPitchedPtr new_image, int count, int row, int col)
 {
-    int* devPtr = (int*)image.ptr;
-    size_t pitch = image.pitch;
-    size_t slicePitch = pitch * row;
+    // Compute the image index [k] of this thread
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
 
-    int* devPtr2 = (int*)new_image.ptr;
-    size_t pitch2 = new_image.pitch;
-    size_t slicePitch2 = pitch2 * row;
-    
-    int* slice = devPtr;
-    int* roww = slice;
+    // Avoid overflow
+    if (index < count) {
+        // Get the start pointer of this image
+        char* imagePtrSlice = (char*)image.ptr + index * image.pitch * col;
 
-    int* slice2 = devPtr2;
-    int* roww2 = slice2;
-    printf("kernel\n");
-    for (int x = 0; x < 5; x++) {
-        roww2[x] = roww[x];
-        printf("%d ", roww2[x]);
+        // Get the start pointer of this new image
+        char* newimagePtrSlice = (char*)new_image.ptr + index * new_image.pitch * col / POOLING_SIZE;
+
+        // Loop for each pixel of the new image
+        for (int i = 0; i < row / POOLING_SIZE; i++) {
+            // Get the start pointer of this row of new image
+            int* newrowData = (int*)(newimagePtrSlice + i * new_image.pitch);
+            for (int j = 0; j < col / POOLING_SIZE; j++) {
+                // Find the left upper point in the original image
+                int corner_i = i * POOLING_SIZE;
+                int corner_j = j * POOLING_SIZE;
+            
+                // Initialize the maximum
+                int maximum = newrowData[j];
+
+                // Loop and find the maximum
+                for (int pool_i = corner_i; pool_i < corner_i + POOLING_SIZE; pool_i++) {
+                    // Get the start pointer of this row of image
+                    int* rowData = (int*)(imagePtrSlice + pool_i * image.pitch);
+
+                    for (int pool_j = corner_j; pool_j < corner_j + POOLING_SIZE; pool_j++) {
+                        // The value of the pixel of original image
+                        int pixel = rowData[pool_j];
+
+                        // Find maximum
+                        maximum = pixel > maximum ? pixel : maximum;
+                    }
+                }
+
+                // Assign pooling result to the new image
+                newrowData[j] = maximum;
+            }
+        }
     }
 }
 
 int main()
 {
     // Get all images
-    vector<filesystem::path> cats_files = getFileNames(CATS_PATH);
+    vector<filesystem::path> cats_files = getFileNames(CATS_PATH_OUTPUT);
     vector<Mat> cats_images;
     bool load_image_status = loadImages(cats_files, cats_images);
     if (!load_image_status) {
@@ -119,13 +148,9 @@ int main()
     // Finish pooling layer calculation in GPU
     cudaError_t cudaStatus = poolingWithCuda(intImages1D, intImages_output1D, count, row, col);
     if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "addWithCuda failed!");
+        fprintf(stderr, "poolingWithCuda failed!");
         return 1;
     }
-
-    cout << endl;
-    cout << "image:" << image_array[0][0][0] << image_array[0][0][1] << image_array[0][0][2] << image_array[0][0][3] << image_array[0][0][4] << endl;
-    cout << "new image:" << intImages_output1D[0] << intImages_output1D[1] << intImages_output1D[2] << intImages_output1D[3] << intImages_output1D[4] << endl;
 
     // cudaDeviceReset must be called before exiting in order for profiling and
     // tracing tools such as Nsight and Visual Profiler to show complete traces.
@@ -134,6 +159,40 @@ int main()
         fprintf(stderr, "cudaDeviceReset failed!");
         return 1;
     }
+
+    // TEST USE: Show the pictures
+    new_image_array = build3Dfrom1D(intImages_output1D, count, row / POOLING_SIZE, col / POOLING_SIZE);
+
+    vector<Mat> images_output;
+    convertIntArr3DToMat(new_image_array, images_output, count, row / POOLING_SIZE, col / POOLING_SIZE);
+
+    // Print the image
+    int cnt = 0;
+    for (auto image : images_output) {
+        if (cnt++ == 9) break;
+        namedWindow("Image", WINDOW_NORMAL);
+        resizeWindow("Image", 600, 600);
+        imshow("Image", image);
+        waitKey(0);
+    }
+
+    // Cleanup
+    for (int k = 0; k < count; k++) {
+        for (int i = 0; i < row; i++) {
+            delete[] image_array[k][i];
+        }
+        delete[] image_array[k];
+
+        for (int i = 0; i < row / POOLING_SIZE; i++) {
+            delete[] new_image_array[k][i];
+        }
+        delete new_image_array[k];
+    }
+    delete[] image_array;
+    delete[] new_image_array;
+
+    delete[] intImages1D;
+    delete[] intImages_output1D;
     
     return 0;
 }
@@ -233,13 +292,25 @@ cudaError_t poolingWithCuda(const int* image_array, int* new_image_array, int co
         goto Error;
     }
 
+    // Kernel parameters
+    int threads_per_block = 1024;
+    int num_blocks = count / threads_per_block + 1;
+
+    // Start the clock
+    auto start = high_resolution_clock::now();
+
     // Launch the kernel
-    poolingKernel<<<1, 1 >>>(image_arrptr, new_image_arrptr, count, row, col);
+    poolingKernel<<<num_blocks, threads_per_block >>>(image_arrptr, new_image_arrptr, count, row, col);
+
+    // End the clock
+    auto end = high_resolution_clock::now();
+    auto duration = duration_cast<microseconds>(end - start);
+    cout << "Time taken by function: " << duration.count() << " microseconds" << endl;
 
     // Check for any errors launching the kernel
     cudaStatus = cudaGetLastError();
     if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+        fprintf(stderr, "poolingKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
         goto Error;
     }
 
@@ -247,7 +318,7 @@ cudaError_t poolingWithCuda(const int* image_array, int* new_image_array, int co
     // any errors encountered during the launch.
     cudaStatus = cudaDeviceSynchronize();
     if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching poolingKernel!\n", cudaStatus);
         goto Error;
     }
 
@@ -336,6 +407,58 @@ bool loadImages(const vector<filesystem::path>& files, vector<Mat>& images) {
     }
 
     printf("Seccussfully loaded %d images, could not load %d images.\n", success, failed);
+
+    return true;
+}
+
+
+int*** build3Dfrom1D(int* arr1D, int x, int y, int z) {
+    int*** arr3D = new int** [x];
+
+    for (int i = 0; i < x; i++) {
+        arr3D[i] = new int* [y];
+        for (int j = 0; j < y; j++) {
+            arr3D[i][j] = new int[z];
+        }
+    }
+
+    for (int i = 0; i < x; i++) {
+        for (int j = 0; j < y; j++) {
+            for (int k = 0; k < z; k++) {
+                arr3D[i][j][k] = arr1D[i * z * y + j * z + k];
+            }
+        }
+    }
+
+    /*for (int i = 0; i < x; i++) {
+        for (int j = 0; j < y; j++) {
+            for (int k = 0; k < z; k++) {
+                cout << arr3D[i][j][k] << " ";
+            }
+            cout << endl;
+        }
+        cout << endl;
+    }
+    cout << endl;*/
+
+    return arr3D;
+}
+
+/*
+* Convert 3D int array to OpenCV Mat.
+*/
+bool convertIntArr3DToMat(int*** intImages3D, vector<Mat>& images, const int count, const int row, const int col) {
+    int cnt = 0;
+    for (int k = 0; k < count; ++k) {
+        Mat image(row, col, CV_8UC1);
+        for (int i = 0; i < row; i++) {
+            for (int j = 0; j < col; j++) {
+                image.at<uchar>(i, j) = intImages3D[cnt][i][j];
+            }
+        }
+        images.push_back(image);
+        ++cnt;
+    }
 
     return true;
 }
