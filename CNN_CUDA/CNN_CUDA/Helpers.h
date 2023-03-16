@@ -8,16 +8,19 @@
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/highgui.hpp>
+#include <opencv2/core/utils/logger.hpp>
 
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
 #include "ConvolutionalLayer.h"
+#include "PoolingLayer.h"
 
 using namespace std;
 using namespace cv;
 using namespace chrono;
 
+#define POOLING_SIZE 3
 
 /*
 * Get all the file names in the specified path.
@@ -78,6 +81,9 @@ bool loadImages(const vector<filesystem::path>& files, vector<Mat>& images) {
 		images.push_back(image);
 	}
 
+	cout << "==================================================" << endl;
+	cout << "=                   LOAD IMAGE                   =" << endl;
+	cout << "==================================================" << endl;
 	printf("Seccussfully loaded %d images, could not load %d images.\n", success, failed);
 
 	return true;
@@ -90,6 +96,9 @@ bool loadImages(const vector<filesystem::path>& files, vector<Mat>& images) {
 void printDeviceProperties() {
 	cudaDeviceProp prop;
 	cudaGetDeviceProperties(&prop, 0);
+	cout << "==================================================" << endl;
+	cout << "=                  DEVICE INFO                   =" << endl;
+	cout << "==================================================" << endl;
 	printf("Device Name: %s\n", prop.name);
 	printf("Compute Capability: %d.%d\n", prop.major, prop.minor);
 	printf("Clock Rate: %d\n", prop.clockRate);
@@ -235,7 +244,7 @@ bool checkImagesEqual(const Mat &images_1, const Mat &images_2, const int row, c
 /*
 * Helper function for using CUDA Convolutional Layer with 3D array input.
 */
-cudaError_t startCudaCov2Dwith3Darr(
+cudaError_t conv2DwithCuda(
 	const int* images, int* images_output, const int* filter, float &time_memcopy, float &time_kernel_run,
 	const int count, const int row, const int col, const int row_output, const int col_output) 
 {
@@ -379,48 +388,127 @@ Error:
 }
 
 
-
-
-/*
-* [DEPRECATED]
-* Helper function for using CUDA Convolutional Layer with 1D array input.
-*/
-cudaError_t startCudaCov2Dwith1Darr(const int* images, const int* images_output, int count, int row, int col) {
-	int size = count * row * col;
+cudaError_t poolingWithCuda(const int* image_array, int* new_image_array, float& time_memcopy, float& time_kernel_run, int count, int row, int col)
+{
 	cudaError_t cudaStatus;
-	int* dev_images;
-	int* dev_images_output;
+	cudaPitchedPtr image_arrptr;
+	cudaPitchedPtr new_image_arrptr;
 
-	cudaStatus = cudaMalloc((void**)&dev_images, size * sizeof(int));
+	// For time measurement
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+	float time_memcopy_images;
+	float time_memcopy_result_in;
+	float time_memcopy_result_out;
+	float time_kernel;
+
+	// Choose which GPU to run on, change this on a multi-GPU system.
+	cudaStatus = cudaSetDevice(0);
 	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaMalloc failed!");
+		fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
 		goto Error;
 	}
-	else {
-		cout << "cudaMalloc success!" << endl;
-	}
-	cudaStatus = cudaMalloc((void**)&dev_images_output, size * sizeof(int));
+
+	// Allocate 3D GPU buffer for image array & output array
+	cudaExtent extent = make_cudaExtent(row * sizeof(int), count, col);
+	cudaStatus = cudaMalloc3D(&image_arrptr, extent);
 	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaMalloc failed!");
+		fprintf(stderr, "cudaMalloc3D failed!");
 		goto Error;
 	}
-	else {
-		cout << "cudaMalloc success!" << endl;
+
+	extent = make_cudaExtent(row / POOLING_SIZE * sizeof(int), count, col / POOLING_SIZE);
+	cudaStatus = cudaMalloc3D(&new_image_arrptr, extent);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMalloc3D failed!");
+		goto Error;
 	}
 
-	cudaStatus = cudaMemcpy(dev_images, images, size * sizeof(int), cudaMemcpyHostToDevice);
+	// Copy arrays from host memory to GPU buffers.
+	cudaMemcpy3DParms cpy = { 0 };
+	cpy.srcPtr = make_cudaPitchedPtr((void*)image_array, row * sizeof(int), row, count);
+	cpy.dstPtr = image_arrptr;
+	cpy.extent = make_cudaExtent(row * sizeof(int), count, col);
+	cpy.kind = cudaMemcpyHostToDevice;
+	cudaEventRecord(start);
+	cudaStatus = cudaMemcpy3D(&cpy);
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&time_memcopy_images, start, stop);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMemcpy3D failed!");
+		goto Error;
+	}
+
+	cudaMemcpy3DParms cpy2 = { 0 };
+	cpy2.srcPtr = make_cudaPitchedPtr((void*)new_image_array, row / POOLING_SIZE * sizeof(int), row / POOLING_SIZE, count);
+	cpy2.dstPtr = new_image_arrptr;
+	cpy2.extent = make_cudaExtent(row / POOLING_SIZE * sizeof(int), count, col / POOLING_SIZE);
+	cpy2.kind = cudaMemcpyHostToDevice;
+	cudaEventRecord(start);
+	cudaStatus = cudaMemcpy3D(&cpy2);
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&time_memcopy_result_in, start, stop);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMemcpy3D failed!");
+		goto Error;
+	}
+
+	// Kernel parameters
+	int threads_per_block = 1024;
+	int num_blocks = count / threads_per_block + 1;
+
+	// Launch the kernel
+	cudaEventRecord(start);
+	//poolingKernel<<<num_blocks, threads_per_block >>>(image_arrptr, new_image_arrptr, count, row, col);
+	optimized_poolingKernel << <num_blocks, threads_per_block >> > (image_arrptr, new_image_arrptr, count, row, col);
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&time_kernel, start, stop);
+
+	// Check for any errors launching the kernel
+	cudaStatus = cudaGetLastError();
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "poolingKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+		goto Error;
+	}
+
+	// cudaDeviceSynchronize waits for the kernel to finish, and returns
+	// any errors encountered during the launch.
+	cudaStatus = cudaDeviceSynchronize();
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching poolingKernel!\n", cudaStatus);
+		goto Error;
+	}
+
+	// Copy output image array from GPU buffer to host memory.
+	cudaMemcpy3DParms cpy3 = { 0 };
+	cpy3.srcPtr = new_image_arrptr;
+	cpy3.dstPtr = make_cudaPitchedPtr((void*)new_image_array, row / POOLING_SIZE * sizeof(int), row / POOLING_SIZE, count);
+	cpy3.extent = make_cudaExtent(row / POOLING_SIZE * sizeof(int), count, col / POOLING_SIZE);
+	cpy3.kind = cudaMemcpyDeviceToHost;
+	cudaEventRecord(start);
+	cudaStatus = cudaMemcpy3D(&cpy3);
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&time_memcopy_result_out, start, stop);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed!");
 		goto Error;
 	}
-	else {
-		cout << "cudaMemcpy success!" << endl;
-	}
 
+	// Calculate time
+	time_memcopy = time_memcopy_images + time_memcopy_result_in + time_memcopy_result_out;
+	time_kernel_run = time_kernel;
 
 Error:
-	cudaFree(dev_images);
-	cudaFree(dev_images_output);
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+	cudaFree(image_arrptr.ptr);
+	cudaFree(new_image_arrptr.ptr);
 
 	return cudaStatus;
 }
+

@@ -18,9 +18,6 @@
 
 #include <chrono>
 
-
-
-
 using namespace chrono;
 
 
@@ -30,6 +27,7 @@ using namespace chrono;
 #define CATS_PATH_OUTPUT ".\\data\\\\Animal Imagescats_output\\"
 #define DOGS_PATH ".\\data\\Animal Images\\dogs\\"
 #define DOGS_PATH_OUTPUT ".\\data\\Animal Images\\dogs_output\\"
+#define DEMO_MODE true
 
 
 void cnn_conv_pool_cpu(vector<Mat> images, vector<Mat>& conv_images, vector<Mat>& pool_images);
@@ -43,6 +41,8 @@ int main()
 
     // Print CUDA device information
     printDeviceProperties();
+
+    utils::logging::setLogLevel(utils::logging::LogLevel::LOG_LEVEL_SILENT);
 
 
     // Load Images
@@ -72,6 +72,11 @@ int main()
 
     // [CPU] Convolutional and Pooling Layer
     cnn_conv_pool_cpu(cats_images, conv_images, pool_images);
+    namedWindow("Original Image", WINDOW_NORMAL);
+    resizeWindow("Original Image", 450, 450);
+    imshow("Original Image", pool_images[0]);
+    waitKey(0);
+    return 1;
 
     // [GPU] Convolutional and Pooling Layer
     cnn_conv_pool_gpu(cats_images, conv_images, pool_images);
@@ -111,8 +116,12 @@ void cnn_conv_pool_cpu(vector<Mat> images, vector<Mat>& conv_images, vector<Mat>
     // Durations
     auto duration_conv = duration_cast<milliseconds>(end_conv - start_conv).count();
     auto duration_pool = duration_cast<milliseconds>(end_pool - start_pool).count();
-    printf("Convolutional Layer took %d milliseconds to run.\n", duration_conv);
-    printf("Pooling Layer took %d milliseconds to run.\n", duration_pool);
+
+    cout << "==================================================" << endl;
+    cout << "=                   CPU RESULT                   =" << endl;
+    cout << "==================================================" << endl;
+    printf("[CPU] Convolutional Layer took %d ms to run.\n", duration_conv);
+    printf("[CPU] Pooling Layer took %d ms to run.\n", duration_pool);
 }
 
 
@@ -123,18 +132,30 @@ void cnn_conv_pool_cpu(vector<Mat> images, vector<Mat>& conv_images, vector<Mat>
 * @return none
 */
 void cnn_conv_pool_gpu(vector<Mat> images, vector<Mat> &conv_images, vector<Mat> &pool_images) {
+    if (DEMO_MODE) {
+        cout << "==================================================" << endl;
+        cout << "=              DEMO MODE DISPLAY                 =" << endl;
+        cout << "==================================================" << endl;
+    }
     // Convert Mat to int array for kernel function use
     const int col = images[0].cols;
     const int col_output = col - 3;
+    const int col_output_pool = col_output / POOLING_SIZE;
     const int row = images[0].rows;
     const int row_output = row - 3;
+    const int row_output_pool = row_output / POOLING_SIZE;
     const int count = images.size();
 
+    // Allocate arr for transform between 1D array and 3Darray
     int*** intImages = new int** [count];
-    int*** intImages_output = new int** [count];
+    int*** intImages_output_conv = new int** [count];
+    int*** intImages_output_pool = new int** [count];
     for (int k = 0; k < count; k++) {
         intImages[k] = new int* [row];
-        intImages_output[k] = new int* [row];
+        intImages_output_conv[k] = new int* [row];
+        intImages_output_pool[k] = new int* [row];
+
+        // Original images
         for (int i = 0; i < row; i++) {
             intImages[k][i] = new int[col];
             for (int j = 0; j < col; j++) {
@@ -142,10 +163,19 @@ void cnn_conv_pool_gpu(vector<Mat> images, vector<Mat> &conv_images, vector<Mat>
             }
         }
 
+        // Conv2D output images
         for (int i = 0; i < row_output; i++) {
-            intImages_output[k][i] = new int[col_output];
+            intImages_output_conv[k][i] = new int[col_output];
             for (int j = 0; j < col_output; j++) {
-                intImages_output[k][i][j] = 0;
+                intImages_output_conv[k][i][j] = 0;
+            }
+        }
+
+        // Pool output images
+        for (int i = 0; i < row_output_pool; i++) {
+            intImages_output_pool[k][i] = new int[col_output_pool];
+            for (int j = 0; j < col_output_pool; j++) {
+                intImages_output_pool[k][i][j] = 0;
             }
         }
     }
@@ -158,13 +188,15 @@ void cnn_conv_pool_gpu(vector<Mat> images, vector<Mat> &conv_images, vector<Mat>
 
     // Convert the 3D arr to 1D arr to pass to kernel
     int* intImages1D = flatten3Dto1D(intImages, count, row, col); // Input images
-    int* intImages_output1D = flatten3Dto1D(intImages_output, count, row_output, col_output); // Store results
+    int* intImages_output_conv1D = flatten3Dto1D(intImages_output_conv, count, row_output, col_output);
+    int* intImages_output_pool1D = flatten3Dto1D(intImages_output_pool, count, row_output_pool, col_output_pool);
 
 
     // Get filters
     Filters filters;
     // Record time
-    float time_total_memcopy = 0.0, time_total_kernel = 0.0;
+    float conv_time_total_memcopy = 0.0, conv_time_total_kernel = 0.0;
+    float pooling_time_total_memcopy = 0.0, pooling_time_total_kernel = 0.0;
 
     // Perform task on each filter
     // There is a much better way that can run multiple kernel functions at once
@@ -173,37 +205,82 @@ void cnn_conv_pool_gpu(vector<Mat> images, vector<Mat> &conv_images, vector<Mat>
     for (int i = 0; i < filters.num; i++) {
         float time_memcopy = 0.0, time_kernel = 0.0;
         // Perform Convolutional Layer
-        startCudaCov2Dwith3Darr(
-            intImages1D, intImages_output1D, filters.filterArr[i], 
+        conv2DwithCuda(
+            intImages1D, intImages_output_conv1D, filters.filterArr[i],
             time_memcopy, time_kernel,
             count, row, col, row_output, col_output
         );
-        time_total_memcopy += time_memcopy;
-        time_total_kernel += time_kernel;
+        conv_time_total_memcopy += time_memcopy;
+        conv_time_total_kernel += time_kernel;
+
+        poolingWithCuda(
+            intImages_output_conv1D, intImages_output_pool1D,
+            pooling_time_total_memcopy, pooling_time_total_kernel,
+            count, row_output, col_output
+        );
 
 
-        // Convert the result from 1D arr back to 3D arr
-        intImages_output = build3Dfrom1D(intImages_output1D, count, row_output, col_output);
+        if (DEMO_MODE) {
+            // Reconstruc images from int array
+            
+            // Conv2D result
+            // Convert the result from 1D arr back to 3D arr
+            intImages_output_conv = build3Dfrom1D(intImages_output_conv1D, count, row_output, col_output);
 
+            // Rebuild the Mat image from 3D Array to visualize the result
+            vector<Mat> images_output;
+            if (!convertIntArr3DToMat(intImages_output_conv, images_output, count, row_output, col_output)) {
+                fprintf(stderr, "Could not convert result int array back to Mat. Program aborted.\n");
+                exit(EXIT_FAILURE);
+            }
 
-        // Rebuild the Mat image from 3D Array to visualize the result
-        vector<Mat> images_output;
-        if (!convertIntArr3DToMat(intImages_output, images_output, count, row_output, col_output)) {
-            fprintf(stderr, "Could not convert result int array back to Mat. Program aborted.\n");
-            exit(EXIT_FAILURE);
+            // Check if cpu and gpu results are equal
+            cout << "Check if GPU result equal to CPU result: " <<
+                checkImagesEqual(conv_images[i], images_output[0], row_output, col_output) << endl;
+
+            for (auto image : images_output) {
+                string name = "Image-conv2d-" + to_string(i);
+                namedWindow(name, WINDOW_NORMAL);
+                resizeWindow(name, 450, 450);
+                imshow(name, image);
+            }
+
+            // Pooling result
+            // Convert the result from 1D arr back to 3D arr
+            intImages_output_pool = build3Dfrom1D(intImages_output_pool1D, count, row_output_pool, col_output_pool);
+
+            // Rebuild the Mat image from 3D Array to visualize the result
+            vector<Mat> images_output_pool;
+            if (!convertIntArr3DToMat(intImages_output_pool, images_output_pool, count, row_output_pool, col_output_pool)) {
+				fprintf(stderr, "Could not convert result int array back to Mat. Program aborted.\n");
+				exit(EXIT_FAILURE);
+			}
+
+            // Check if cpu and gpu results are equal
+            cout << "Check if GPU result equal to CPU result: " <<
+                checkImagesEqual(pool_images[i], images_output_pool[0], row_output_pool, col_output_pool) << endl;
+
+            for (auto image : images_output_pool) {
+                string name = "Image-pool-" + to_string(i);
+                namedWindow(name, WINDOW_NORMAL);
+                resizeWindow(name, 450, 450);
+                imshow(name, image);
+            }
         }
-
-        // TEST: check if cpu and gpu results are equal
-        cout << "Equal: " << checkImagesEqual(conv_images[i], images_output[0], row_output, col_output) << endl;
-
-        /*for (auto i : images_output) {
-            imshow("image", i);
-            waitKey(0);
-        }*/
     }
 
-    printf("Total time: %f, memcopy: %f, kernel: %f.\n",
-        time_total_memcopy + time_total_kernel, time_total_memcopy, time_total_kernel
+    if (DEMO_MODE) {
+        waitKey(0);
+    }
+
+    cout << "==================================================" << endl;
+    cout << "=                   GPU RESULT                   =" << endl;
+    cout << "==================================================" << endl;
+    printf("[GPU] Convolutional Layer total time: %f ms, memcopy: %f ms, kernel: %f ms.\n",
+        conv_time_total_memcopy + conv_time_total_kernel, conv_time_total_memcopy, conv_time_total_kernel
+    );
+    printf("[GPU] Pooling Layer total time: %f ms, memcopy: %f ms, kernel: %f ms.\n",
+        pooling_time_total_memcopy + pooling_time_total_kernel, pooling_time_total_memcopy, pooling_time_total_kernel
     );
     
 
@@ -216,14 +293,21 @@ void cnn_conv_pool_gpu(vector<Mat> images, vector<Mat> &conv_images, vector<Mat>
         delete[] intImages[k];
 
         for (int i = 0; i < row_output; i++) {
-            delete[] intImages_output[k][i];
+            delete[] intImages_output_conv[k][i];
         }
-        delete intImages_output[k];
+        delete intImages_output_conv[k];
+
+        for (int i = 0; i < row_output_pool; i++) {
+            delete[] intImages_output_pool[k][i];
+        }
+        delete intImages_output_pool[k];
     }
     delete[] intImages;
-    delete[] intImages_output;
+    delete[] intImages_output_conv;
+    delete[] intImages_output_pool;
 
     delete[] intImages1D;
-    delete[] intImages_output1D;
+    delete[] intImages_output_conv1D;
+    delete[] intImages_output_pool1D;
 }
 
