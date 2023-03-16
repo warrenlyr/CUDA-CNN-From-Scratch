@@ -252,12 +252,12 @@ __global__ void conv2D_cuda3D(
 	int count, int row, int col, int row_output, int col_output
 )
 {
-	/*__shared__ int shared_filter[FILTER_SIZE * FILTER_SIZE];
+	__shared__ int shared_filter[FILTER_SIZE * FILTER_SIZE];
 
-	if (threadIdx.x < FILTER_SIZE * FILTER_SIZE) {
-		shared_filter[threadIdx.x] = filter[threadIdx.x];
+	if (threadIdx.y < FILTER_SIZE * FILTER_SIZE) {
+		shared_filter[threadIdx.y] = filter[threadIdx.y];
 	}
-	__syncthreads();*/
+	__syncthreads();
 
 	// Compute the image index [k] of this thread
 	int x = blockIdx.x * blockDim.x + threadIdx.x;

@@ -193,7 +193,8 @@ void cnn_conv_pool_gpu(vector<Mat> images, vector<Mat> &conv_images, vector<Mat>
             exit(EXIT_FAILURE);
         }
 
-        cout << "Equal: " << checkImagesEqual(conv_images[i], images_output[0], row_output, col_output);
+        // TEST: check if cpu and gpu results are equal
+        cout << "Equal: " << checkImagesEqual(conv_images[i], images_output[0], row_output, col_output) << endl;
 
         /*for (auto i : images_output) {
             imshow("image", i);
