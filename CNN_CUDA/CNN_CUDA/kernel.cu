@@ -37,8 +37,11 @@ void cnn_conv_pool_cpu(vector<Mat> images);
 
 int main()
 {
-    
+    // Test OpenCV with CUDA support installation status
     //cuda::printCudaDeviceInfo(0);
+
+    // Print CUDA device information
+    printDeviceProperties();
 
 
     // Load Images
@@ -51,10 +54,16 @@ int main()
         exit(EXIT_FAILURE);
     }
 
-    for (int i = 0; i < 10; i++) {
-        cout << int(cats_images[0].at<uchar>(0, i)) << " ";
-    }
-    cout << endl;
+    /*for (int k = 0; k < 12; k++) {
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                cout << int(cats_images[k].at<uchar>(i, j)) << " ";
+            }
+            cout << endl;
+        }
+        cout << endl;
+        cout << endl;
+    }*/
 
 
     // [CPU] Convolutional and Pooling Layer

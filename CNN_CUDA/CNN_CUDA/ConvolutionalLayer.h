@@ -247,22 +247,61 @@ vector<Mat> conv2D(const string& image_path, const vector<vector<vector<int>>>& 
 }
 
 
-__global__ void conv2D_cuda(
-	cudaPitchedPtr devPtr, cudaPitchedPtr devPtr_output,
+__global__ void conv2D_cuda3D(
+	cudaPitchedPtr devPtr, cudaPitchedPtr devPtr_output, int* filter,
 	int count, int row, int col, int row_output, int col_output
 )
 {
+	printf("%d\n", threadIdx.y);
+	// Compute the image index [k] of this thread
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 	int z = blockIdx.z * blockDim.z + threadIdx.z;
+	int index = gridDim.x * blockDim.y * x + y;
+	int run = 0;
 
-	for (int i = 0; i < 10; i++) {
-		char* devPtrSlice = (char*)devPtr.ptr + z * devPtr.pitch * count;
-		int* rowData = (int*)(devPtrSlice + y * devPtr.pitch);
-		int data = rowData[i];
-		printf("%d ", data);
+
+	if (index < count) {
+		run = 1;
+		// Get the start pointer of this image
+		char* devPtrSlice = (char*)devPtr.ptr + index * devPtr.pitch * col;
+		printf("here1\n");
+		// Output image
+		char* devPtrSlice_output = (char*)devPtr_output.ptr + index * devPtr_output.pitch * col_output;
+		printf("here2\n");
+
+		// Start processing this image
+		for (int i = 0; i < row_output; i++) {
+			// Get the start pointer of each row
+			int* rowData_output = (int*)(devPtrSlice_output + i * devPtr_output.pitch);
+			printf("here3\n");
+
+			// Access each col of this row
+			for (int j = 0; j < col_output; j++) {
+				int filter_sum = 0;
+				printf("here4\n");
+
+				// Apply filter
+				for (int filter_i = 0; filter_i < FILTER_SIZE; filter_i++) {
+					int* rowData = (int*)(devPtrSlice + (i + filter_i) * devPtr.pitch);
+					printf("here5\n");
+
+					for (int filter_j = 0; filter_j < FILTER_SIZE; filter_j++) {
+						filter_sum += filter[filter_i * FILTER_SIZE + filter_j] * rowData[j + filter_j];
+						printf("here6\n");
+					}
+				}
+
+				printf("here7\n");
+				rowData_output[j] = filter_sum;
+				//printf("%d ", data);
+			}
+			//printf("\n");
+		}
 	}
-	
+
+	printf("[%d, %d, %d] - %d - run: %d\n", x, y, z, index, run);
+
 }
 
 
