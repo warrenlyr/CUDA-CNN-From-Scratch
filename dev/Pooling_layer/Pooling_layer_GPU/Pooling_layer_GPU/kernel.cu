@@ -40,7 +40,7 @@ void getCurrDir();
 
 vector<filesystem::path> getFileNames(const string& path);
 
-cudaError_t poolingWithCuda(const int* image_array, int* new_image_array, int image_cnt, int row, int col);
+cudaError_t poolingWithCuda(const int* image_array, int* new_image_array, float& time_memcopy, float& time_kernel_run, int count, int row, int col);
 
 int* flatten3Dto1D(int*** arr3D, int x, int y, int z);
 
@@ -52,6 +52,7 @@ bool convertIntArr3DToMat(int*** intImages3D, vector<Mat>& images, const int cou
 
 int*** build3Dfrom1D(int* arr1D, int x, int y, int z);
 
+// Naive Pooling
 __global__ void poolingKernel(cudaPitchedPtr image, cudaPitchedPtr new_image, int count, int row, int col)
 {
     // Compute the image index [k] of this thread
@@ -98,10 +99,80 @@ __global__ void poolingKernel(cudaPitchedPtr image, cudaPitchedPtr new_image, in
     }
 }
 
+// Optimized Pooling with array unrolling
+__global__ void optimized_poolingKernel(cudaPitchedPtr image, cudaPitchedPtr new_image, int count, int row, int col)
+{
+    // Compute the image index [k] of this thread
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Avoid overflow
+    if (index < count) {
+        // Get the start pointer of this image
+        char* imagePtrSlice = (char*)image.ptr + index * image.pitch * col;
+
+        // Get the start pointer of this new image
+        char* newimagePtrSlice = (char*)new_image.ptr + index * new_image.pitch * col / POOLING_SIZE;
+
+        // Loop for each pixel of the new image
+        for (int i = 0; i < row / POOLING_SIZE; i++) {
+            // Get the start pointer of this row of new image
+            int* newrowData = (int*)(newimagePtrSlice + i * new_image.pitch);
+            for (int j = 0; j < col / POOLING_SIZE; j++) {
+                // Find the left upper point in the original image
+                int corner_i = i * POOLING_SIZE;
+                int corner_j = j * POOLING_SIZE;
+
+                // Initialize the maximum
+                int maximum = newrowData[j];
+
+                // Find the maximum, used loop unrolling, ASSUMED POOLING_SIZE = 3!!!
+                int i1 = corner_i + 1;
+                int i2 = corner_i + 2;
+                int j1 = corner_j + 1;
+                int j2 = corner_j + 2;
+
+                int* rowData0 = (int*)(imagePtrSlice + corner_i * image.pitch);
+                int* rowData1 = (int*)(imagePtrSlice + i1 * image.pitch);
+                int* rowData2 = (int*)(imagePtrSlice + i2 * image.pitch);
+
+                int pixel0 = rowData0[corner_j];
+                maximum = pixel0 > maximum ? pixel0 : maximum;
+
+                int pixel1 = rowData0[j1];
+                maximum = pixel1 > maximum ? pixel1 : maximum;
+
+                int pixel2 = rowData0[j2];
+                maximum = pixel2 > maximum ? pixel2 : maximum;
+
+                int pixel3 = rowData1[corner_j];
+                maximum = pixel3 > maximum ? pixel3 : maximum;
+
+                int pixel4 = rowData1[j1];
+                maximum = pixel4 > maximum ? pixel4 : maximum;
+
+                int pixel5 = rowData1[j2];
+                maximum = pixel5 > maximum ? pixel5 : maximum;
+
+                int pixel6= rowData2[corner_j];
+                maximum = pixel6 > maximum ? pixel6 : maximum;
+
+                int pixel7 = rowData2[j1];
+                maximum = pixel7 > maximum ? pixel7 : maximum;
+
+                int pixel8 = rowData2[j2];
+                maximum = pixel8 > maximum ? pixel8 : maximum;
+                
+                // Assign pooling result to the new image
+                newrowData[j] = maximum;
+            }
+        }
+    }
+}
+
 int main()
 {
     // Get all images
-    vector<filesystem::path> cats_files = getFileNames(CATS_PATH_OUTPUT);
+    vector<filesystem::path> cats_files = getFileNames(CATS_PATH);
     vector<Mat> cats_images;
     bool load_image_status = loadImages(cats_files, cats_images);
     if (!load_image_status) {
@@ -145,8 +216,11 @@ int main()
     int* intImages1D = flatten3Dto1D(image_array, count, row, col);
     int* intImages_output1D = flatten3Dto1D(new_image_array, count, row / POOLING_SIZE, col / POOLING_SIZE);
 
+    // Record time
+    float pooling_time_total_memcopy = 0.0, pooling_time_total_kernel = 0.0;
+
     // Finish pooling layer calculation in GPU
-    cudaError_t cudaStatus = poolingWithCuda(intImages1D, intImages_output1D, count, row, col);
+    cudaError_t cudaStatus = poolingWithCuda(intImages1D, intImages_output1D, pooling_time_total_memcopy, pooling_time_total_kernel, count, row, col);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "poolingWithCuda failed!");
         return 1;
@@ -160,6 +234,7 @@ int main()
         return 1;
     }
 
+    /*
     // TEST USE: Show the pictures
     new_image_array = build3Dfrom1D(intImages_output1D, count, row / POOLING_SIZE, col / POOLING_SIZE);
 
@@ -175,6 +250,13 @@ int main()
         imshow("Image", image);
         waitKey(0);
     }
+    */
+    
+
+    // Print time stats
+    printf("Pooling total time: %f, memcopy: %f, kernel: %f.\n",
+        pooling_time_total_memcopy + pooling_time_total_kernel, pooling_time_total_memcopy, pooling_time_total_kernel
+    );
 
     // Cleanup
     for (int k = 0; k < count; k++) {
@@ -197,6 +279,131 @@ int main()
     return 0;
 }
 
+
+// Helper function for using CUDA to computer pooling layer in parallel
+cudaError_t poolingWithCuda(const int* image_array, int* new_image_array, float& time_memcopy, float& time_kernel_run, int count, int row, int col)
+{   
+    cudaError_t cudaStatus;
+    cudaPitchedPtr image_arrptr;
+    cudaPitchedPtr new_image_arrptr;
+
+    // For time measurement
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    float time_memcopy_images;
+    float time_memcopy_result_in;
+    float time_memcopy_result_out;
+    float time_kernel;
+
+    // Choose which GPU to run on, change this on a multi-GPU system.
+    cudaStatus = cudaSetDevice(0);
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
+        goto Error;
+    }
+
+    // Allocate 3D GPU buffer for image array & output array
+    cudaExtent extent = make_cudaExtent(row * sizeof(int), count, col);
+    cudaStatus = cudaMalloc3D(&image_arrptr, extent);
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc3D failed!");
+        goto Error;
+    }
+
+    extent = make_cudaExtent(row / POOLING_SIZE * sizeof(int), count, col / POOLING_SIZE);
+    cudaStatus = cudaMalloc3D(&new_image_arrptr, extent);
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc3D failed!");
+        goto Error;
+    }
+
+    // Copy arrays from host memory to GPU buffers.
+    cudaMemcpy3DParms cpy = { 0 };
+    cpy.srcPtr = make_cudaPitchedPtr((void*)image_array, row * sizeof(int), row, count);
+    cpy.dstPtr = image_arrptr;
+    cpy.extent = make_cudaExtent(row * sizeof(int), count, col);
+    cpy.kind = cudaMemcpyHostToDevice;
+    cudaEventRecord(start);
+    cudaStatus = cudaMemcpy3D(&cpy);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&time_memcopy_images, start, stop);
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMemcpy3D failed!");
+        goto Error;
+    }
+
+    cudaMemcpy3DParms cpy2 = { 0 };
+    cpy2.srcPtr = make_cudaPitchedPtr((void*)new_image_array, row / POOLING_SIZE * sizeof(int), row / POOLING_SIZE, count);
+    cpy2.dstPtr = new_image_arrptr;
+    cpy2.extent = make_cudaExtent(row / POOLING_SIZE * sizeof(int), count, col / POOLING_SIZE);
+    cpy2.kind = cudaMemcpyHostToDevice;
+    cudaEventRecord(start);
+    cudaStatus = cudaMemcpy3D(&cpy2);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&time_memcopy_result_in, start, stop);
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMemcpy3D failed!");
+        goto Error;
+    }
+
+    // Kernel parameters
+    int threads_per_block = 1024;
+    int num_blocks = count / threads_per_block + 1;
+
+    // Launch the kernel
+    cudaEventRecord(start);
+    //poolingKernel<<<num_blocks, threads_per_block >>>(image_arrptr, new_image_arrptr, count, row, col);
+    optimized_poolingKernel << <num_blocks, threads_per_block >> > (image_arrptr, new_image_arrptr, count, row, col);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&time_kernel, start, stop);
+
+    // Check for any errors launching the kernel
+    cudaStatus = cudaGetLastError();
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "poolingKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+        goto Error;
+    }
+
+    // cudaDeviceSynchronize waits for the kernel to finish, and returns
+    // any errors encountered during the launch.
+    cudaStatus = cudaDeviceSynchronize();
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching poolingKernel!\n", cudaStatus);
+        goto Error;
+    }
+
+    // Copy output image array from GPU buffer to host memory.
+    cudaMemcpy3DParms cpy3 = { 0 };
+    cpy3.srcPtr = new_image_arrptr;
+    cpy3.dstPtr = make_cudaPitchedPtr((void*)new_image_array, row / POOLING_SIZE * sizeof(int), row / POOLING_SIZE, count);
+    cpy3.extent = make_cudaExtent(row / POOLING_SIZE * sizeof(int), count, col / POOLING_SIZE);
+    cpy3.kind = cudaMemcpyDeviceToHost;
+    cudaEventRecord(start);
+    cudaStatus = cudaMemcpy3D(&cpy3);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&time_memcopy_result_out, start, stop);
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMemcpy failed!");
+        goto Error;
+    }
+
+    // Calculate time
+    time_memcopy = time_memcopy_images + time_memcopy_result_in + time_memcopy_result_out;
+    time_kernel_run = time_kernel;
+
+Error:
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+    cudaFree(image_arrptr.ptr);
+    cudaFree(new_image_arrptr.ptr);
+
+    return cudaStatus;
+}
 
 void getCurrDir() {
     char cwd[1024];
@@ -232,113 +439,12 @@ vector<filesystem::path> getFileNames(const string& path) {
     int count = 0;
     // If the path exist, get all the files in the path
     for (const auto& entry : filesystem::directory_iterator(path)) {
-        if (count == 100) break;
+        //if (count == 1) break;
         files.push_back(entry.path());
         ++count;
     }
 
     return files;
-}
-
-// Helper function for using CUDA to computer pooling layer in parallel
-cudaError_t poolingWithCuda(const int* image_array, int* new_image_array, int count, int row, int col)
-{
-    cudaError_t cudaStatus;
-    cudaPitchedPtr image_arrptr;
-    cudaPitchedPtr new_image_arrptr;
-
-    // Choose which GPU to run on, change this on a multi-GPU system.
-    cudaStatus = cudaSetDevice(0);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
-        goto Error;
-    }
-
-    // Allocate 3D GPU buffer for image array & output array
-    cudaExtent extent = make_cudaExtent(row * sizeof(int), count, col);
-    cudaStatus = cudaMalloc3D(&image_arrptr, extent);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc3D failed!");
-        goto Error;
-    }
-
-    extent = make_cudaExtent(row / POOLING_SIZE * sizeof(int), count, col / POOLING_SIZE);
-    cudaStatus = cudaMalloc3D(&new_image_arrptr, extent);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc3D failed!");
-        goto Error;
-    }
-
-    // Copy arrays from host memory to GPU buffers.
-    cudaMemcpy3DParms cpy = { 0 };
-    cpy.srcPtr = make_cudaPitchedPtr((void*)image_array, row * sizeof(int), row, count);
-    cpy.dstPtr = image_arrptr;
-    cpy.extent = make_cudaExtent(row * sizeof(int), count, col);
-    cpy.kind = cudaMemcpyHostToDevice;
-    cudaStatus = cudaMemcpy3D(&cpy);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy3D failed!");
-        goto Error;
-    }
-
-    cudaMemcpy3DParms cpy2 = { 0 };
-    cpy2.srcPtr = make_cudaPitchedPtr((void*)new_image_array, row / POOLING_SIZE * sizeof(int), row / POOLING_SIZE, count);
-    cpy2.dstPtr = new_image_arrptr;
-    cpy2.extent = make_cudaExtent(row / POOLING_SIZE * sizeof(int), count, col / POOLING_SIZE);
-    cpy2.kind = cudaMemcpyHostToDevice;
-    cudaStatus = cudaMemcpy3D(&cpy2);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy3D failed!");
-        goto Error;
-    }
-
-    // Kernel parameters
-    int threads_per_block = 1024;
-    int num_blocks = count / threads_per_block + 1;
-
-    // Start the clock
-    auto start = high_resolution_clock::now();
-
-    // Launch the kernel
-    poolingKernel<<<num_blocks, threads_per_block >>>(image_arrptr, new_image_arrptr, count, row, col);
-
-    // End the clock
-    auto end = high_resolution_clock::now();
-    auto duration = duration_cast<microseconds>(end - start);
-    cout << "Time taken by function: " << duration.count() << " microseconds" << endl;
-
-    // Check for any errors launching the kernel
-    cudaStatus = cudaGetLastError();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "poolingKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-        goto Error;
-    }
-
-    // cudaDeviceSynchronize waits for the kernel to finish, and returns
-    // any errors encountered during the launch.
-    cudaStatus = cudaDeviceSynchronize();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching poolingKernel!\n", cudaStatus);
-        goto Error;
-    }
-
-    // Copy output image array from GPU buffer to host memory.
-    cudaMemcpy3DParms cpy3 = { 0 };
-    cpy3.srcPtr = new_image_arrptr;
-    cpy3.dstPtr = make_cudaPitchedPtr((void*)new_image_array, row / POOLING_SIZE * sizeof(int), row / POOLING_SIZE, count);
-    cpy3.extent = make_cudaExtent(row / POOLING_SIZE * sizeof(int), count, col / POOLING_SIZE);
-    cpy3.kind = cudaMemcpyDeviceToHost;
-    cudaStatus = cudaMemcpy3D(&cpy3);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
-
-Error:
-    cudaFree(image_arrptr.ptr);
-    cudaFree(new_image_arrptr.ptr);
-
-    return cudaStatus;
 }
 
 /*
