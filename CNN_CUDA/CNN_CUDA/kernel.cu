@@ -33,19 +33,13 @@ using namespace chrono;
 
 
 void cnn_conv_pool_cpu(vector<Mat> images);
+void cnn_conv_pool_gpu(vector<Mat> images);
 
 
 int main()
 {
-    // Test OpenCV with CUDA support installation status
+    // TEST: OpenCV with CUDA support installation status
     //cuda::printCudaDeviceInfo(0);
-
-    Filters filters;
-    const int* filter_1 = filters.filterArr[0];
-    for (int i = 0; i < 9; i++) {
-        cout << filter_1[i] << " ";
-    }
-    return 1;
 
     // Print CUDA device information
     printDeviceProperties();
@@ -61,6 +55,7 @@ int main()
         exit(EXIT_FAILURE);
     }
 
+    // TEST: Print some original images
     /*for (int k = 0; k < 12; k++) {
         for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 3; j++) {
@@ -76,97 +71,9 @@ int main()
     // [CPU] Convolutional and Pooling Layer
     //cnn_conv_pool_cpu(cats_images);
 
-
-    // Convert Mat to int array
-    const int col = cats_images[0].cols;
-    const int col_output = col - 3;
-    const int row = cats_images[0].rows;
-    const int row_output = row - 3;
-    const int count = cats_images.size();
-
-    int*** intImages = new int** [count];
-    int*** intImages_output = new int** [count];
-    for (int k = 0; k < count; k++) {
-        intImages[k] = new int* [row];
-        intImages_output[k] = new int* [row];
-        for (int i = 0; i < row; i++) {
-			intImages[k][i] = new int[col];
-            for (int j = 0; j < col; j++) {
-                intImages[k][i][j] = 0;
-            }
-		}
-        
-        for (int i = 0; i < row_output; i++) {
-			intImages_output[k][i] = new int[col_output];
-            for (int j = 0; j < col_output; j++) {
-				intImages_output[k][i][j] = 0;
-			}
-        }
-    }
-
-
-    if (!convertMatToIntArr3D(cats_images, intImages, count, row, col)) {
-        fprintf(stderr, "Could not convert Mat to int array. Program aborted.\n");
-		exit(EXIT_FAILURE);
-    }
-
-    int* intImages1D = flatten3Dto1D(intImages, count, row, col);
-    int* intImages_output1D = flatten3Dto1D(intImages_output, count, row_output, col_output);
-    startCudaCov2Dwith3Darr(intImages1D, intImages_output1D, filter_1, count, row, col, row_output, col_output);
-
-    /*for (int i = 0; i < count * row_output * col_output; i++) {
-        cout << intImages_output1D[i] << " ";
-    }
-    cout << endl;*/
-
-    intImages_output = build3Dfrom1D(intImages_output1D, count, row_output, col_output);
-    /*for (int k = 0; k < count; k++) {
-        for (int i = 0; i < row_output; i++) {
-            for (int j = 0; j < col_output; j++) {
-                cout << intImages_output[k][i][j] << " ";
-            }
-            cout << endl;
-        }
-        cout << endl;
-    }*/
-
-    vector<Mat> images_output;
-    convertIntArr3DToMat(intImages_output, images_output, count, row_output, col_output);
-
-    // Print the image
-    /*int cnt = 0;
-    for (auto image : images_output) {
-        if (cnt++ == 9) break;
-        namedWindow("Image", WINDOW_NORMAL);
-        resizeWindow("Image", 600, 600);
-        imshow("Image", image);
-        waitKey(0);
-    }*/
-
-    /*int* intImages1D = new int[count * row * col];
-    int* intImages_output1D = new int[count * row * col];
-    if (convertMatToIntArr1D(cats_images, intImages1D, count, row, col)) {
-		fprintf(stderr, "Could not convert Mat to int array. Program aborted.\n");
-		exit(EXIT_FAILURE);
-	}*/
-
-    // Cleanup
-    for (int k = 0; k < count; k++) {
-        for (int i = 0; i < row; i++) {
-            delete[] intImages[k][i];
-        }
-        delete[] intImages[k];
-
-        for (int i = 0; i < row_output; i++) {
-            delete[] intImages_output[k][i];
-        }
-        delete intImages_output[k];
-    }
-    delete[] intImages;
-    delete[] intImages_output;
-
-    delete[] intImages1D;
-    delete[] intImages_output1D;
+    // [GPU] Convolutional and Pooling Layer
+    cnn_conv_pool_gpu(cats_images);
+    
     
     
     return 0;
@@ -210,15 +117,105 @@ void cnn_conv_pool_cpu(vector<Mat> images) {
 
 
 /*
-* Catch CUDA errors and print the error message.
+* The GPU version of the Convolutional Layer and Pooling Layer in CNN.
 * 
-* @param err: The CUDA function return value.
+* @param images: The images to be processed.
+* @return none
 */
-void checkCudaError(cudaError_t err) {
-    if (err != cudaSuccess) {
-		fprintf(stderr, "CUDA Error: %s\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
-	}
-}
+void cnn_conv_pool_gpu(vector<Mat> images) {
+    // Convert Mat to int array for kernel function use
+    const int col = images[0].cols;
+    const int col_output = col - 3;
+    const int row = images[0].rows;
+    const int row_output = row - 3;
+    const int count = images.size();
 
+    int*** intImages = new int** [count];
+    int*** intImages_output = new int** [count];
+    for (int k = 0; k < count; k++) {
+        intImages[k] = new int* [row];
+        intImages_output[k] = new int* [row];
+        for (int i = 0; i < row; i++) {
+            intImages[k][i] = new int[col];
+            for (int j = 0; j < col; j++) {
+                intImages[k][i][j] = 0;
+            }
+        }
+
+        for (int i = 0; i < row_output; i++) {
+            intImages_output[k][i] = new int[col_output];
+            for (int j = 0; j < col_output; j++) {
+                intImages_output[k][i][j] = 0;
+            }
+        }
+    }
+
+    if (!convertMatToIntArr3D(images, intImages, count, row, col)) {
+        fprintf(stderr, "Could not convert Mat to int array. Program aborted.\n");
+        exit(EXIT_FAILURE);
+    }
+
+
+    // Convert the 3D arr to 1D arr to pass to kernel
+    int* intImages1D = flatten3Dto1D(intImages, count, row, col); // Input images
+    int* intImages_output1D = flatten3Dto1D(intImages_output, count, row_output, col_output); // Store results
+
+
+    // Get filters
+    Filters filters;
+    // Record time
+    float time_total_memcopy = 0.0, time_total_kernel = 0.0;
+
+    // Perform task on each filter
+    // There is a much better way that can run multiple kernel functions at once
+    // so we don't have to copy same data to device multiple times.
+    // But we don't have time to do that
+    for (int i = 0; i < filters.num; i++) {
+        float time_memcopy = 0.0, time_kernel = 0.0;
+        // Perform Convolutional Layer
+        startCudaCov2Dwith3Darr(
+            intImages1D, intImages_output1D, filters.filterArr[i], 
+            time_memcopy, time_kernel,
+            count, row, col, row_output, col_output
+        );
+        time_total_memcopy += time_memcopy;
+        time_total_kernel += time_kernel;
+
+
+        // Convert the result from 1D arr back to 3D arr
+        intImages_output = build3Dfrom1D(intImages_output1D, count, row_output, col_output);
+
+
+        // Rebuild the Mat image from 3D Array to visualize the result
+        vector<Mat> images_output;
+        if (!convertIntArr3DToMat(intImages_output, images_output, count, row_output, col_output)) {
+            fprintf(stderr, "Could not convert result int array back to Mat. Program aborted.\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    printf("Total time: %f, memcopy: %f, kernel: %f.\n",
+        time_total_memcopy + time_total_kernel, time_total_memcopy, time_total_kernel
+    );
+    
+
+
+    // Cleanup
+    for (int k = 0; k < count; k++) {
+        for (int i = 0; i < row; i++) {
+            delete[] intImages[k][i];
+        }
+        delete[] intImages[k];
+
+        for (int i = 0; i < row_output; i++) {
+            delete[] intImages_output[k][i];
+        }
+        delete intImages_output[k];
+    }
+    delete[] intImages;
+    delete[] intImages_output;
+
+    delete[] intImages1D;
+    delete[] intImages_output1D;
+}
 

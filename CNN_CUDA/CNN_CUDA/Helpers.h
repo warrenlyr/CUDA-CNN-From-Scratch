@@ -221,11 +221,20 @@ int*** build3Dfrom1D(int* arr1D, int x, int y, int z) {
 * Helper function for using CUDA Convolutional Layer with 3D array input.
 */
 cudaError_t startCudaCov2Dwith3Darr(
-	const int* images, int* images_output, const int* filter,
+	const int* images, int* images_output, const int* filter, float &time_memcopy, float &time_kernel_run,
 	const int count, const int row, const int col, const int row_output, const int col_output) 
 {
 
 	cudaError_t cudaStatus;
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+	float time_memcopy_images;
+	float time_memcopy_filter;
+	float time_memcopy_result_in;
+	float time_memcopy_result_out;
+	float time_kernel;
+
 	cudaPitchedPtr dev_ptr;
 	cudaPitchedPtr dev_ptr_output;
 	int* dev_filter;
@@ -236,9 +245,6 @@ cudaError_t startCudaCov2Dwith3Darr(
 		fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
 		goto Error;
 	}
-	else {
-		cout << "cudaSetDevice success!" << endl;
-	}
 
 	// Allocate GPU buffers for 3D int array of images
 	cudaExtent extent = make_cudaExtent(row * sizeof(int), count, col);
@@ -247,22 +253,20 @@ cudaError_t startCudaCov2Dwith3Darr(
 		fprintf(stderr, "cudaMalloc3D failed!");
 		goto Error;
 	}
-	else {
-		cout << "cudaMalloc3D success!" << endl;{}
-	}
 	// Copy images to device memory
 	cudaMemcpy3DParms copyParams = { 0 };
 	copyParams.srcPtr = make_cudaPitchedPtr((void*)images, row * sizeof(int), row, count);
 	copyParams.dstPtr = dev_ptr;
 	copyParams.extent = extent;
 	copyParams.kind = cudaMemcpyHostToDevice;
+	cudaEventRecord(start);
 	cudaStatus = cudaMemcpy3D(&copyParams);
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&time_memcopy_images, start, stop);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy3D failed!");
 		goto Error;
-	}
-	else
-		cout << "cudaMemcpy3D success!" << endl; {} {
 	}
 
 	// Allocated GPU buffers for 3D int array of images output
@@ -272,22 +276,21 @@ cudaError_t startCudaCov2Dwith3Darr(
 		fprintf(stderr, "cudaMalloc3D failed!");
 		goto Error;
 	}
-	else {
-		cout << "cudaMalloc3D success!" << endl;{}
-	}
+
 	// Copy images output to device memory
 	copyParams = { 0 };
 	copyParams.srcPtr = make_cudaPitchedPtr((void*)images_output, row_output * sizeof(int), row_output, count);
 	copyParams.dstPtr = dev_ptr_output;
 	copyParams.extent = extent;
 	copyParams.kind = cudaMemcpyHostToDevice;
+	cudaEventRecord(start);
 	cudaStatus = cudaMemcpy3D(&copyParams);
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&time_memcopy_result_in, start, stop);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy3D failed!");
 		goto Error;
-	}
-	else {
-		cout << "cudaMemcpy3D success!" << endl; {}
 	}
 
 	// Copy filter to device memory
@@ -296,7 +299,11 @@ cudaError_t startCudaCov2Dwith3Darr(
 		fprintf(stderr, "cudaMalloc failed!");
 		goto Error;
 	}
+	cudaEventRecord(start);
 	cudaStatus = cudaMemcpy(dev_filter, filter, 9 * sizeof(int), cudaMemcpyHostToDevice);
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&time_memcopy_filter, start, stop);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed!");
 		goto Error;
@@ -304,19 +311,20 @@ cudaError_t startCudaCov2Dwith3Darr(
 	
 	// Calculate config
 	int grid_y = ceil(float(count) / 1024);
-	cout << "grid_y: " << grid_y << endl;
 	int block_y;
 	if (count < 1024)
 		block_y = count;
 	else
 		block_y = 1024;
-	cout << "block_y: " << block_y << endl;
 
 	// Launch kernel function
 	dim3 gridDim(1, grid_y, 1);
 	dim3 blockDim(1, block_y, 1);
-	auto start_conv = high_resolution_clock::now();
+	cudaEventRecord(start);
 	conv2D_cuda3D <<<gridDim, blockDim>>> (dev_ptr, dev_ptr_output, dev_filter, count, row, col, row_output, col_output);
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&time_kernel, start, stop);
 
 	cudaStatus = cudaGetLastError();
 	if (cudaStatus != cudaSuccess) {
@@ -324,34 +332,30 @@ cudaError_t startCudaCov2Dwith3Darr(
 		goto Error;
 	}
 
-	cudaStatus = cudaDeviceSynchronize();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceSynchronize failed!");
-		goto Error;
-	}
-
-	auto end_conv = high_resolution_clock::now();
-	cout << "conv2D_cuda3D success!" << endl;
-	auto duration_conv = duration_cast<milliseconds>(end_conv - start_conv).count();
-	printf("Convolutional Layer took %d milliseconds to run.\n", duration_conv);
-
 	// Copy output from device memory to host memory
 	copyParams = { 0 };
 	copyParams.srcPtr = dev_ptr_output;
 	copyParams.dstPtr = make_cudaPitchedPtr((void*)images_output, row_output * sizeof(int), row_output, count);
 	copyParams.extent = extent;
 	copyParams.kind = cudaMemcpyDeviceToHost;
+	cudaEventRecord(start);
 	cudaStatus = cudaMemcpy3D(&copyParams);
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&time_memcopy_result_out, start, stop);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy3D failed: %s", cudaGetErrorString(cudaStatus));
 		goto Error;
 	}
-	else {
-		cout << "cudaMemcpy3D success!" << endl; {}
-	}
 
+	
+	// Calculate time
+	time_memcopy = time_memcopy_images + time_memcopy_filter + time_memcopy_result_in + time_memcopy_result_out;
+	time_kernel_run = time_kernel;
 
 Error:
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
 	cudaFree(dev_ptr.ptr);
 	cudaFree(dev_ptr_output.ptr);
 	cudaFree(dev_filter);
