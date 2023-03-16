@@ -32,8 +32,8 @@ using namespace chrono;
 #define DOGS_PATH_OUTPUT ".\\data\\Animal Images\\dogs_output\\"
 
 
-void cnn_conv_pool_cpu(vector<Mat> images);
-void cnn_conv_pool_gpu(vector<Mat> images);
+void cnn_conv_pool_cpu(vector<Mat> images, vector<Mat>& conv_images, vector<Mat>& pool_images);
+void cnn_conv_pool_gpu(vector<Mat>, vector<Mat>& conv_images, vector<Mat>& pool_images);
 
 
 int main()
@@ -66,13 +66,15 @@ int main()
         cout << endl;
         cout << endl;
     }*/
-
+    
+    vector<Mat> conv_images;
+    vector<Mat> pool_images;
 
     // [CPU] Convolutional and Pooling Layer
-    //cnn_conv_pool_cpu(cats_images);
+    cnn_conv_pool_cpu(cats_images, conv_images, pool_images);
 
     // [GPU] Convolutional and Pooling Layer
-    cnn_conv_pool_gpu(cats_images);
+    cnn_conv_pool_gpu(cats_images, conv_images, pool_images);
     
     
     
@@ -86,9 +88,8 @@ int main()
 * @param images: The images to be processed.
 * @return none
 */
-void cnn_conv_pool_cpu(vector<Mat> images) {
+void cnn_conv_pool_cpu(vector<Mat> images, vector<Mat>& conv_images, vector<Mat>& pool_images) {
     // Convolutional Layer
-    vector<Mat> conv_images;
     auto start_conv = high_resolution_clock::now();
     Filters filters;
     for (auto image : images) {
@@ -100,7 +101,6 @@ void cnn_conv_pool_cpu(vector<Mat> images) {
     auto end_conv = high_resolution_clock::now();
 
     // Pooling Layer
-    vector<Mat> pool_images;
     auto start_pool = high_resolution_clock::now();
     for (auto image : conv_images) {
         Mat new_image = pool2D_max(image);
@@ -122,7 +122,7 @@ void cnn_conv_pool_cpu(vector<Mat> images) {
 * @param images: The images to be processed.
 * @return none
 */
-void cnn_conv_pool_gpu(vector<Mat> images) {
+void cnn_conv_pool_gpu(vector<Mat> images, vector<Mat> &conv_images, vector<Mat> &pool_images) {
     // Convert Mat to int array for kernel function use
     const int col = images[0].cols;
     const int col_output = col - 3;
@@ -192,6 +192,13 @@ void cnn_conv_pool_gpu(vector<Mat> images) {
             fprintf(stderr, "Could not convert result int array back to Mat. Program aborted.\n");
             exit(EXIT_FAILURE);
         }
+
+        cout << "Equal: " << checkImagesEqual(conv_images[i], images_output[0], row_output, col_output);
+
+        /*for (auto i : images_output) {
+            imshow("image", i);
+            waitKey(0);
+        }*/
     }
 
     printf("Total time: %f, memcopy: %f, kernel: %f.\n",

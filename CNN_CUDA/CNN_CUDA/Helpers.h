@@ -42,7 +42,7 @@ vector<filesystem::path> getFileNames(const string& path) {
 	int count = 0;
 	// If the path exist, get all the files in the path
 	for (const auto& entry : filesystem::directory_iterator(path)) {
-		//if (count == 10) break;
+		if (count == 1) break;
 		files.push_back(entry.path());
 		++count;
 	}
@@ -213,6 +213,21 @@ int*** build3Dfrom1D(int* arr1D, int x, int y, int z) {
 	}
 
 	return arr3D;
+}
+
+
+bool checkImagesEqual(const Mat &images_1, const Mat &images_2, const int row, const int col) {
+
+		for (int i = 0; i < row; i++) {
+			for (int j = 0; j < col; j++) {
+				//printf("1: %d, 2: %d ", int(images_1.at<uchar>(i, j)), int(images_2.at<uchar>(i, j)));
+				if (images_1.at<uchar>(i, j) != images_2.at<uchar>(i, j)) {
+					return false;
+				}
+			}
+		}
+
+	return true;
 }
 
 

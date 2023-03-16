@@ -252,6 +252,13 @@ __global__ void conv2D_cuda3D(
 	int count, int row, int col, int row_output, int col_output
 )
 {
+	/*__shared__ int shared_filter[FILTER_SIZE * FILTER_SIZE];
+
+	if (threadIdx.x < FILTER_SIZE * FILTER_SIZE) {
+		shared_filter[threadIdx.x] = filter[threadIdx.x];
+	}
+	__syncthreads();*/
+
 	// Compute the image index [k] of this thread
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -279,19 +286,14 @@ __global__ void conv2D_cuda3D(
 				// Apply filter
 				for (int filter_i = 0; filter_i < FILTER_SIZE; filter_i++) {
 					int* rowData = (int*)(devPtrSlice + (i + filter_i) * devPtr.pitch);
-
-					for (int filter_j = 0; filter_j < FILTER_SIZE; filter_j++) {
-						filter_sum += filter[filter_i * FILTER_SIZE + filter_j] * rowData[j + filter_j];
-					}
+					filter_sum += filter[filter_i * FILTER_SIZE] * rowData[j];
+					filter_sum += filter[filter_i * FILTER_SIZE + 1] * rowData[j + 1];
+					filter_sum += filter[filter_i * FILTER_SIZE + 2] * rowData[j + 2];
 				}
 				rowData_output[j] = filter_sum;
-				//printf("%d ", data);
 			}
-			//printf("\n");
 		}
 	}
-
-	//printf("[%d, %d, %d] - %d - run: %d\n", x, y, z, index, run);
 
 }
 
