@@ -15,6 +15,7 @@ public:
 		{0, 1, 0},
 		{0, 1, 0},
 	};
+	const int verticalLine1DArr[9] = { 0, 1, 0, 0, 1, 0, 0, 1, 0 };
 	int verticalSum = 0;
 
 	const vector<vector<int>> horizontalLine{
@@ -22,6 +23,7 @@ public:
 		{1, 1, 1},
 		{0, 0, 0},
 	};
+	const int horizontalLine1DArr[9] = { 0, 0, 0, 1, 1, 1, 0, 0, 0 };
 	int horizontalSum = 0;
 
 	const vector<vector<int>> leftDiagonalLine{
@@ -29,6 +31,7 @@ public:
 		{0, 1, 0},
 		{1, 0, 0},
 	};
+	const int leftDiagonalLine1DArr[9] = { 0, 0, 1, 0, 1, 0, 1, 0, 0 };
 	int leftDiagonalSum = 0;
 
 	const vector<vector<int>> rightDiagonalLine{
@@ -36,6 +39,7 @@ public:
 		{0, 1, 0},
 		{0, 0, 1},
 	};
+	const int rightDiagonalLine1DArr[9] = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
 	int rightDiagonalSum = 0;
 
 	const vector<vector<int>> cross{
@@ -43,6 +47,7 @@ public:
 		{1, 1, 1},
 		{0, 1, 0},
 	};
+	const int cross1DArr[9] = { 0, 1, 0, 1, 1, 1, 0, 1, 0 };
 	int crossSum = 0;
 
 	const vector<vector<int>> plus{
@@ -50,6 +55,7 @@ public:
 		{1, 1, 1},
 		{1, 1, 1},
 	};
+	const int plus1DArr[9] = { 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 	int plusSum = 0;
 
 	const vector<vector<int>> x{
@@ -57,6 +63,7 @@ public:
 		{0, 1, 0},
 		{1, 0, 1},
 	};
+	const int x1DArr[9] = { 1, 0, 1, 0, 1, 0, 1, 0, 1 };
 	int xSum = 0;
 
 	const vector<vector<int>> square{
@@ -64,6 +71,7 @@ public:
 		{1, 0, 1},
 		{1, 1, 1},
 	};
+	const int square1DArr[9] = { 1, 1, 1, 1, 0, 1, 1, 1, 1 };
 	int squareSum = 0;
 
 	const vector<vector<int>> diamond{
@@ -71,7 +79,21 @@ public:
 		{1, 0, 1},
 		{0, 1, 0},
 	};
+	const int diamond1DArr[9] = { 0, 1, 0, 1, 0, 1, 0, 1, 0 };
 	int diamondSum = 0;
+
+
+	const int filterArr[9][9] = {
+		{ 0, 1, 0, 0, 1, 0, 0, 1, 0 },
+		{ 0, 0, 0, 1, 1, 1, 0, 0, 0 },
+		{ 0, 0, 1, 0, 1, 0, 1, 0, 0 },
+		{ 1, 0, 0, 0, 1, 0, 0, 0, 1 },
+		{ 0, 1, 0, 1, 1, 1, 0, 1, 0 },
+		{ 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+		{ 1, 0, 1, 0, 1, 0, 1, 0, 1 },
+		{ 1, 1, 1, 1, 0, 1, 1, 1, 1 },
+		{ 0, 1, 0, 1, 0, 1, 0, 1, 0 }
+	};
 
 
 	bool cleanSum() {
@@ -86,4 +108,5 @@ public:
 		this->diamondSum = 0;
 		return true;
 	}
+
 };

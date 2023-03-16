@@ -42,7 +42,7 @@ vector<filesystem::path> getFileNames(const string& path) {
 	int count = 0;
 	// If the path exist, get all the files in the path
 	for (const auto& entry : filesystem::directory_iterator(path)) {
-		if (count == 10) break;
+		//if (count == 10) break;
 		files.push_back(entry.path());
 		++count;
 	}
@@ -197,7 +197,7 @@ int* flatten3Dto1D(int*** arr3D, int x, int y, int z) {
 int*** build3Dfrom1D(int* arr1D, int x, int y, int z) {
 	int*** arr3D = new int** [x];
 
-	for (int i = 0; i < y; i++) {
+	for (int i = 0; i < x; i++) {
 		arr3D[i] = new int* [y];
 		for (int j = 0; j < y; j++) {
 			arr3D[i][j] = new int[z];
@@ -212,17 +212,6 @@ int*** build3Dfrom1D(int* arr1D, int x, int y, int z) {
 		}
 	}
 
-	/*for (int i = 0; i < x; i++) {
-		for (int j = 0; j < y; j++) {
-			for (int k = 0; k < z; k++) {
-				cout << arr3D[i][j][k] << " ";
-			}
-			cout << endl;
-		}
-		cout << endl;
-	}
-	cout << endl;*/
-
 	return arr3D;
 }
 
@@ -232,7 +221,7 @@ int*** build3Dfrom1D(int* arr1D, int x, int y, int z) {
 * Helper function for using CUDA Convolutional Layer with 3D array input.
 */
 cudaError_t startCudaCov2Dwith3Darr(
-	const int* images, int* images_output, 
+	const int* images, int* images_output, const int* filter,
 	const int count, const int row, const int col, const int row_output, const int col_output) 
 {
 
@@ -302,7 +291,6 @@ cudaError_t startCudaCov2Dwith3Darr(
 	}
 
 	// Copy filter to device memory
-	int filter[9] = { 0, 1, 0, 0, 1, 0, 0, 1, 0 };
 	cudaStatus = cudaMalloc((void**)&dev_filter, 9 * sizeof(int));
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed!");

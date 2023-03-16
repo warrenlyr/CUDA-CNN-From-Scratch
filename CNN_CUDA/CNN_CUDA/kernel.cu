@@ -40,6 +40,13 @@ int main()
     // Test OpenCV with CUDA support installation status
     //cuda::printCudaDeviceInfo(0);
 
+    Filters filters;
+    const int* filter_1 = filters.filterArr[0];
+    for (int i = 0; i < 9; i++) {
+        cout << filter_1[i] << " ";
+    }
+    return 1;
+
     // Print CUDA device information
     printDeviceProperties();
 
@@ -97,6 +104,7 @@ int main()
         }
     }
 
+
     if (!convertMatToIntArr3D(cats_images, intImages, count, row, col)) {
         fprintf(stderr, "Could not convert Mat to int array. Program aborted.\n");
 		exit(EXIT_FAILURE);
@@ -104,7 +112,7 @@ int main()
 
     int* intImages1D = flatten3Dto1D(intImages, count, row, col);
     int* intImages_output1D = flatten3Dto1D(intImages_output, count, row_output, col_output);
-    startCudaCov2Dwith3Darr(intImages1D, intImages_output1D, count, row, col, row_output, col_output);
+    startCudaCov2Dwith3Darr(intImages1D, intImages_output1D, filter_1, count, row, col, row_output, col_output);
 
     /*for (int i = 0; i < count * row_output * col_output; i++) {
         cout << intImages_output1D[i] << " ";
@@ -126,14 +134,14 @@ int main()
     convertIntArr3DToMat(intImages_output, images_output, count, row_output, col_output);
 
     // Print the image
-    int cnt = 0;
+    /*int cnt = 0;
     for (auto image : images_output) {
         if (cnt++ == 9) break;
         namedWindow("Image", WINDOW_NORMAL);
         resizeWindow("Image", 600, 600);
         imshow("Image", image);
         waitKey(0);
-    }
+    }*/
 
     /*int* intImages1D = new int[count * row * col];
     int* intImages_output1D = new int[count * row * col];
