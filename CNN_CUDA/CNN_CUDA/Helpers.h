@@ -20,7 +20,6 @@ using namespace std;
 using namespace cv;
 using namespace chrono;
 
-#define POOLING_SIZE 3
 
 /*
 * Get all the file names in the specified path.
@@ -47,6 +46,7 @@ vector<filesystem::path> getFileNames(const string& path) {
 	for (const auto& entry : filesystem::directory_iterator(path)) {
 		if (count == 1) break;
 		files.push_back(entry.path());
+		//cout << entry.path() << endl;
 		++count;
 	}
 
@@ -227,14 +227,14 @@ int*** build3Dfrom1D(int* arr1D, int x, int y, int z) {
 
 bool checkImagesEqual(const Mat &images_1, const Mat &images_2, const int row, const int col) {
 
-		for (int i = 0; i < row; i++) {
-			for (int j = 0; j < col; j++) {
-				//printf("1: %d, 2: %d ", int(images_1.at<uchar>(i, j)), int(images_2.at<uchar>(i, j)));
-				if (images_1.at<uchar>(i, j) != images_2.at<uchar>(i, j)) {
-					return false;
-				}
+	for (int i = 0; i < row; i++) {
+		for (int j = 0; j < col; j++) {
+			//printf("1: %d, 2: %d ", int(images_1.at<uchar>(i, j)), int(images_2.at<uchar>(i, j)));
+			if (images_1.at<uchar>(i, j) != images_2.at<uchar>(i, j)) {
+				return false;
 			}
 		}
+	}
 
 	return true;
 }
@@ -388,7 +388,11 @@ Error:
 }
 
 
-cudaError_t poolingWithCuda(const int* image_array, int* new_image_array, float& time_memcopy, float& time_kernel_run, int count, int row, int col)
+cudaError_t poolingWithCuda(
+	const int* image_array, int* new_image_array, 
+	float& time_memcopy, float& time_kernel_run, 
+	int count, int row, int col
+)
 {
 	cudaError_t cudaStatus;
 	cudaPitchedPtr image_arrptr;

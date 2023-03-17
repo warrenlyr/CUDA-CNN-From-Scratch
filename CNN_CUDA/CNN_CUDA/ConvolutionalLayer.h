@@ -2,7 +2,6 @@
 #include "Filters.h"
 
 #include <string>
-#include <vector>
 #include <iostream>
 
 #include <opencv2/opencv.hpp>
@@ -35,8 +34,8 @@ vector<Mat> conv2D_static(
 	int image_width = image.cols;
 	int image_height = image.rows;
 	// Calculate the new image size
-	int new_image_width = image_width - filters.size;
-	int new_image_height = image_height - filters.size;
+	int new_image_width = image_width - filters.size + 1;
+	int new_image_height = image_height - filters.size + 1;
 
 	// Init the new image
 	Mat new_image_extract_vertical = Mat::zeros(new_image_height, new_image_width, CV_8UC1);
@@ -199,8 +198,8 @@ vector<Mat> conv2D(const string& image_path, const vector<vector<vector<int>>>& 
 		int image_height = image.rows;
 
 		// New image size
-		int new_image_width = image_width - FILTER_SIZE;
-		int new_image_height = image_height - FILTER_SIZE;
+		int new_image_width = image_width - FILTER_SIZE + 1;
+		int new_image_height = image_height - FILTER_SIZE + 1;
 
 		// Init the vector to store the new images
 		vector<Mat> new_images;
@@ -252,23 +251,21 @@ __global__ void conv2D_cuda3D(
 	int count, int row, int col, int row_output, int col_output
 )
 {
-	__shared__ int shared_filter[FILTER_SIZE * FILTER_SIZE];
+	/*__shared__ int shared_filter[FILTER_SIZE * FILTER_SIZE];
 
 	if (threadIdx.y < FILTER_SIZE * FILTER_SIZE) {
 		shared_filter[threadIdx.y] = filter[threadIdx.y];
 	}
-	__syncthreads();
+	__syncthreads();*/
 
 	// Compute the image index [k] of this thread
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 	int z = blockIdx.z * blockDim.z + threadIdx.z;
 	int index = gridDim.x * blockDim.y * x + y;
-	int run = 0;
 
 
 	if (index < count) {
-		run = 1;
 		// Get the start pointer of this image
 		char* devPtrSlice = (char*)devPtr.ptr + index * devPtr.pitch * col;
 		// Output image
@@ -290,7 +287,7 @@ __global__ void conv2D_cuda3D(
 					filter_sum += filter[filter_i * FILTER_SIZE + 1] * rowData[j + 1];
 					filter_sum += filter[filter_i * FILTER_SIZE + 2] * rowData[j + 2];
 				}
-				rowData_output[j] = filter_sum;
+				rowData_output[j] = filter_sum % 256;
 			}
 		}
 	}

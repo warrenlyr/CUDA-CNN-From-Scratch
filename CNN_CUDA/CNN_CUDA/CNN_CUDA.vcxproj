@@ -89,7 +89,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <CudaCompile Include="kernel.cu" />
-    <CudaCompile Include="KernelFunctions.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ConvolutionalLayer.h" />

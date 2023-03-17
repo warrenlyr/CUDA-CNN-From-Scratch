@@ -72,7 +72,7 @@ __global__ void poolingKernel(cudaPitchedPtr image, cudaPitchedPtr new_image, in
         char* imagePtrSlice = (char*)image.ptr + index * image.pitch * col;
 
         // Get the start pointer of this new image
-        char* newimagePtrSlice = (char*)new_image.ptr + index * new_image.pitch * col / POOLING_SIZE;
+        char* newimagePtrSlice = (char*)new_image.ptr + index * new_image.pitch * (col / POOLING_SIZE);
 
         // Loop for each pixel of the new image
         for (int i = 0; i < row / POOLING_SIZE; i++) {
@@ -84,7 +84,8 @@ __global__ void poolingKernel(cudaPitchedPtr image, cudaPitchedPtr new_image, in
                 int corner_j = j * POOLING_SIZE;
 
                 // Initialize the maximum
-                int maximum = newrowData[j];
+                //int maximum = newrowData[j];
+                int maximum = -1;
 
                 // Loop and find the maximum
                 for (int pool_i = corner_i; pool_i < corner_i + POOLING_SIZE; pool_i++) {
@@ -94,6 +95,7 @@ __global__ void poolingKernel(cudaPitchedPtr image, cudaPitchedPtr new_image, in
                     for (int pool_j = corner_j; pool_j < corner_j + POOLING_SIZE; pool_j++) {
                         // The value of the pixel of original image
                         int pixel = rowData[pool_j];
+                        //printf("[%d][%d], [%d][%d]checking pixel: %d. Now max: %d", i, j, pool_i, pool_j, pixel, maximum);
 
                         // Find maximum
                         maximum = pixel > maximum ? pixel : maximum;
@@ -133,7 +135,8 @@ __global__ void optimized_poolingKernel(cudaPitchedPtr image, cudaPitchedPtr new
                 int corner_j = j * POOLING_SIZE;
 
                 // Initialize the maximum
-                int maximum = newrowData[j];
+                //int maximum = newrowData[j];
+                int maximum = -1;
 
                 // Find the maximum, used loop unrolling, ASSUMED POOLING_SIZE = 3!!!
                 int i1 = corner_i + 1;

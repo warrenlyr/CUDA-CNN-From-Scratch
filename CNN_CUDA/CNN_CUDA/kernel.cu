@@ -18,8 +18,6 @@
 
 #include <chrono>
 
-using namespace chrono;
-
 
 #define CATS_PATH ".\\data\\Animal Images\\cats\\"
 #define BASE_PATH ".\\data\\Animal Images\\"
@@ -28,6 +26,7 @@ using namespace chrono;
 #define DOGS_PATH ".\\data\\Animal Images\\dogs\\"
 #define DOGS_PATH_OUTPUT ".\\data\\Animal Images\\dogs_output\\"
 #define DEMO_MODE true
+#define DEMO_MODE_SHOW_RES_IMAGE false
 
 
 void cnn_conv_pool_cpu(vector<Mat> images, vector<Mat>& conv_images, vector<Mat>& pool_images);
@@ -72,11 +71,19 @@ int main()
 
     // [CPU] Convolutional and Pooling Layer
     cnn_conv_pool_cpu(cats_images, conv_images, pool_images);
-    namedWindow("Original Image", WINDOW_NORMAL);
+    /*namedWindow("Original Image", WINDOW_NORMAL);
     resizeWindow("Original Image", 450, 450);
     imshow("Original Image", pool_images[0]);
     waitKey(0);
-    return 1;
+    return 1;*/
+
+    /*for (int i = 0; i < conv_images[0].rows; i++) {
+        for (int j = 0; j < conv_images[0].cols; j++) {
+            cout << int(conv_images[0].at<uchar>(i, j)) << " ";
+        }
+        cout << endl;
+    }
+    cout << endl;*/
 
     // [GPU] Convolutional and Pooling Layer
     cnn_conv_pool_gpu(cats_images, conv_images, pool_images);
@@ -139,10 +146,10 @@ void cnn_conv_pool_gpu(vector<Mat> images, vector<Mat> &conv_images, vector<Mat>
     }
     // Convert Mat to int array for kernel function use
     const int col = images[0].cols;
-    const int col_output = col - 3;
+    const int col_output = col - 2;
     const int col_output_pool = col_output / POOLING_SIZE;
     const int row = images[0].rows;
-    const int row_output = row - 3;
+    const int row_output = row - 2;
     const int row_output_pool = row_output / POOLING_SIZE;
     const int count = images.size();
 
@@ -213,11 +220,15 @@ void cnn_conv_pool_gpu(vector<Mat> images, vector<Mat> &conv_images, vector<Mat>
         conv_time_total_memcopy += time_memcopy;
         conv_time_total_kernel += time_kernel;
 
+        // Perform Pooling Layer
         poolingWithCuda(
             intImages_output_conv1D, intImages_output_pool1D,
-            pooling_time_total_memcopy, pooling_time_total_kernel,
+            time_memcopy, time_kernel,
             count, row_output, col_output
         );
+        pooling_time_total_memcopy += time_memcopy;
+        pooling_time_total_kernel += time_kernel;
+
 
 
         if (DEMO_MODE) {
@@ -237,13 +248,16 @@ void cnn_conv_pool_gpu(vector<Mat> images, vector<Mat> &conv_images, vector<Mat>
             // Check if cpu and gpu results are equal
             cout << "Check if GPU result equal to CPU result: " <<
                 checkImagesEqual(conv_images[i], images_output[0], row_output, col_output) << endl;
-
-            for (auto image : images_output) {
-                string name = "Image-conv2d-" + to_string(i);
-                namedWindow(name, WINDOW_NORMAL);
-                resizeWindow(name, 450, 450);
-                imshow(name, image);
+            
+            if (DEMO_MODE_SHOW_RES_IMAGE) {
+                    for (auto image : images_output) {
+                    string name = "Image-conv2d-" + to_string(i);
+                    namedWindow(name, WINDOW_NORMAL);
+                    resizeWindow(name, 450, 450);
+                    imshow(name, image);
+                }
             }
+            
 
             // Pooling result
             // Convert the result from 1D arr back to 3D arr
@@ -260,11 +274,13 @@ void cnn_conv_pool_gpu(vector<Mat> images, vector<Mat> &conv_images, vector<Mat>
             cout << "Check if GPU result equal to CPU result: " <<
                 checkImagesEqual(pool_images[i], images_output_pool[0], row_output_pool, col_output_pool) << endl;
 
-            for (auto image : images_output_pool) {
-                string name = "Image-pool-" + to_string(i);
-                namedWindow(name, WINDOW_NORMAL);
-                resizeWindow(name, 450, 450);
-                imshow(name, image);
+            if (DEMO_MODE_SHOW_RES_IMAGE) {
+                for (auto image : images_output_pool) {
+                    string name = "Image-pool-" + to_string(i);
+                    namedWindow(name, WINDOW_NORMAL);
+                    resizeWindow(name, 450, 450);
+                    imshow(name, image);
+                }
             }
         }
     }
