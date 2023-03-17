@@ -13,6 +13,7 @@
 * Pooling Layer: Max Pooling 2D.
 * 
 * @param image: the image to be processed
+* @return Mat object of pooled image
 */
 Mat pool2D_max(const Mat image) {
 
@@ -95,7 +96,6 @@ __global__ void poolingKernel(cudaPitchedPtr image, cudaPitchedPtr new_image, in
                     for (int pool_j = corner_j; pool_j < corner_j + POOLING_SIZE; pool_j++) {
                         // The value of the pixel of original image
                         int pixel = rowData[pool_j];
-                        //printf("[%d][%d], [%d][%d]checking pixel: %d. Now max: %d", i, j, pool_i, pool_j, pixel, maximum);
 
                         // Find maximum
                         maximum = pixel > maximum ? pixel : maximum;

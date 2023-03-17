@@ -246,17 +246,66 @@ vector<Mat> conv2D(const string& image_path, const vector<vector<vector<int>>>& 
 }
 
 
+/*
+* CUDA: Naive
+*/
 __global__ void conv2D_cuda3D(
 	cudaPitchedPtr devPtr, cudaPitchedPtr devPtr_output, int* filter,
 	int count, int row, int col, int row_output, int col_output
 )
 {
-	/*__shared__ int shared_filter[FILTER_SIZE * FILTER_SIZE];
+	// Compute the image index [k] of this thread
+	int x = blockIdx.x * blockDim.x + threadIdx.x;
+	int y = blockIdx.y * blockDim.y + threadIdx.y;
+	int z = blockIdx.z * blockDim.z + threadIdx.z;
+	int index = gridDim.x * blockDim.y * x + y;
 
-	if (threadIdx.y < FILTER_SIZE * FILTER_SIZE) {
-		shared_filter[threadIdx.y] = filter[threadIdx.y];
+
+	if (index < count) {
+		// Get the start pointer of this image
+		char* devPtrSlice = (char*)devPtr.ptr + index * devPtr.pitch * col;
+		// Output image
+		char* devPtrSlice_output = (char*)devPtr_output.ptr + index * devPtr_output.pitch * col_output;
+
+		// Start processing this image
+		for (int i = 0; i < row_output; i++) {
+			// Get the start pointer of each row
+			int* rowData_output = (int*)(devPtrSlice_output + i * devPtr_output.pitch);
+
+			// Access each col of this row
+			for (int j = 0; j < col_output; j++) {
+				int filter_sum = 0;
+
+				// Apply filter
+				for (int filter_i = 0; filter_i < FILTER_SIZE; filter_i++) {
+					int* rowData = (int*)(devPtrSlice + (i + filter_i) * devPtr.pitch);
+					for (int filter_j = 0; filter_j < FILTER_SIZE; filter_j++) {
+						filter_sum += filter[filter_i * FILTER_SIZE + filter_j] * rowData[j + filter_j];
+					}
+				}
+				rowData_output[j] = filter_sum % 256;
+			}
+		}
 	}
-	__syncthreads();*/
+}
+
+
+/*
+* CUDA: Shared Memory, Register Memory, Loop Unrolling
+*/
+__global__ void conv2D_cuda3D_opt(
+	cudaPitchedPtr devPtr, cudaPitchedPtr devPtr_output, int* filter,
+	int count, int row, int col, int row_output, int col_output
+)
+{
+	__shared__ int shared_filter[FILTER_SIZE * FILTER_SIZE];
+
+	if (threadIdx.y == 0) {
+		for (int i = 0; i < FILTER_SIZE * FILTER_SIZE; i++) {
+			shared_filter[i] = filter[i];
+		}
+	}
+	__syncthreads();
 
 	// Compute the image index [k] of this thread
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -283,9 +332,9 @@ __global__ void conv2D_cuda3D(
 				// Apply filter
 				for (int filter_i = 0; filter_i < FILTER_SIZE; filter_i++) {
 					int* rowData = (int*)(devPtrSlice + (i + filter_i) * devPtr.pitch);
-					filter_sum += filter[filter_i * FILTER_SIZE] * rowData[j];
-					filter_sum += filter[filter_i * FILTER_SIZE + 1] * rowData[j + 1];
-					filter_sum += filter[filter_i * FILTER_SIZE + 2] * rowData[j + 2];
+					filter_sum += shared_filter[filter_i * FILTER_SIZE] * rowData[j];
+					filter_sum += shared_filter[filter_i * FILTER_SIZE + 1] * rowData[j + 1];
+					filter_sum += shared_filter[filter_i * FILTER_SIZE + 2] * rowData[j + 2];
 				}
 				rowData_output[j] = filter_sum % 256;
 			}
@@ -294,29 +343,4 @@ __global__ void conv2D_cuda3D(
 
 }
 
-
-__global__ void cov2d_cuda1D(
-	int* input, int* output, int* filter,
-	int count, int row, int col, int row_output, int col_output
-)
-{
-	int global_index = blockIdx.x * blockDim.x + threadIdx.x;
-	int global_count = global_index / (row * col);
-	int global_before = global_index - global_count * row * col;
-	int global_row = (global_index - global_before) / col;
-	int global_col = (global_index - global_before) % col;
-
-	if (global_row < row_output && global_col < col_output) {
-		int sum = 0;
-		for (int i = 0; i < FILTER_SIZE; i++) {
-			for (int j = 0; j < FILTER_SIZE; j++) {
-				int index = (global_row + i) * col + (global_col + j);
-				int value = input[index];
-				int filter_value = filter[i * FILTER_SIZE + j];
-				sum += value * filter_value;
-			}
-		}
-		output[global_index] = sum;
-	}
-}
 
