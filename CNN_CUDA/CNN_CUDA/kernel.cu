@@ -17,6 +17,11 @@
 * 3. Setup CUDA and OpenCV in Visual Studio project properties
 * 4. Set the C++ standard to C++17, and also set the CUDA C++ standard to C++17
 * 4. Compile and run
+* ----------------------------------------------
+* Warning
+* If your RAM is less than 16GB, or you GPU RAM is less than 4GB,
+* this program may not be run successfully.
+* Consider uncomment the line 47 in Helper.h to limit the number of images to be loaded.
 */
 #include "Filters.h"
 #include "Helpers.h"
@@ -32,8 +37,8 @@
 #define CATS_PATH_OUTPUT ".\\data\\\\Animal Imagescats_output\\"
 #define DOGS_PATH ".\\data\\Animal Images\\dogs\\"
 #define DOGS_PATH_OUTPUT ".\\data\\Animal Images\\dogs_output\\"
-#define DEMO_MODE true
-#define DEMO_MODE_SHOW_RES_IMAGE false
+#define DEMO_MODE true // Set to true to run the demo mode which will validate correctness and display images
+#define DEMO_MODE_SHOW_RES_IMAGE false // Set to true to show the result images in demo mode
 
 
 void cnn_conv_pool_cpu(vector<Mat> images, vector<Mat>& conv_images, vector<Mat>& pool_images);
