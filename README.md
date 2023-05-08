@@ -5,6 +5,8 @@ The heart of any CNN algorithm lies in its Convolutional Layer and Pooling Layer
 
 Key Concepts: Matrix Multiplication, CUDA, Threads, Blocks, Grids, Memory Management, Cache Optimization, Latency Reduction, and Performance Enhancement.
 
+Term: Winter 2023
+
 ## Author
 
 - Warren Liu
