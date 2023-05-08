@@ -1,14 +1,19 @@
 # CUDA_CNN_From_Scratch
-Build Convolutional Neural Network from scratch and accelerate with CUDA. 
-Although there are many sophisticated frameworks out there such as Tensorflow, Sklearn, cuDNN, OpenCV, and Caffe,
-this is a part of our final project for High Performance Computing class, for applying what we have learned during the semester.
+This is our final project of CSS566: High Performance Computing class. In this project, we undertake the ambitious task of constructing a Convolutional Neural Network (CNN) from the ground up and optimizing its performance with CUDA. Though there exists a plethora of highly advanced frameworks like Tensorflow, Sklearn, cuDNN, OpenCV, and Caffe, the goal here is to apply and deepen our understanding of High Performance Computing concepts learned throughout our coursework.
 
-The "Convolutional Layer" and the "Pooling Layer" are the most computationally intensive part of the CNN algorithm,
-and it involves matrix operations that we can accelerate using CUDA. Therefore, it's a perfect choice for our final project.
+The heart of any CNN algorithm lies in its 'Convolutional Layer' and 'Pooling Layer', both of which are computationally demanding. These layers primarily engage in matrix operations, which we aim to significantly expedite using CUDA. This makes it an ideal candidate for our final project as we strive to push the boundaries of computing performance.
 
-Keywords: Matrix Multiplication, CUDA, Threads, Blocks, Grids, Memory, Cache, Latency, Performance.
+Key Concepts: Matrix Multiplication, CUDA, Threads, Blocks, Grids, Memory Management, Cache Optimization, Latency Reduction, and Performance Enhancement.
+
+## Author
+
+- Warren Liu
+- Chris Ma
 
 ## Implementation
+
+Given the time limitations, our focus was primarily on implementing both the Convolutional Layer and Pooling Layer, with versions optimized for CPU and GPU respectively. 
+
 - Convolutional Layer
   - CPU Naive implementation
   - CUDA Naive implementation
@@ -17,6 +22,15 @@ Keywords: Matrix Multiplication, CUDA, Threads, Blocks, Grids, Memory, Cache, La
   - CPU Naive implementation
   - CUDA Naive implementation
   - CUDA optimized implementation
+
+## Code
+
+- `CNN_CUDA` folder contains the final version
+- `dev` folder contains some testing code during development
+
+## Report
+
+Our comprehensive project report is located in the `Report` folder. This document provides a detailed account of our development journey, the optimization strategies we employed, our key discoveries, and additional reflections.
 
 ## Prerequisites
 
