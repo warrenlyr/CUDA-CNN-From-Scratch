@@ -1,4 +1,4 @@
-# CUDA_CNN_From_Scratch
+# CUDA CNN From Scratch
 This is our final project of CSS566: High Performance Computing class. In this project, we undertake the ambitious task of constructing a Convolutional Neural Network (CNN) from the ground up and optimizing its performance with CUDA. Though there exists a plethora of highly advanced frameworks like Tensorflow, Sklearn, cuDNN, OpenCV, and Caffe, the goal here is to apply and deepen our understanding of High Performance Computing concepts learned throughout our coursework.
 
 The heart of any CNN algorithm lies in its Convolutional Layer and Pooling Layer, both of which are computationally demanding. These layers primarily engage in matrix operations, which we aim to significantly expedite using CUDA. This makes it an ideal candidate for our final project as we strive to push the boundaries of computing performance.
